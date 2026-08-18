@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the AFD plugin project
 """Config normalization shim for AFD-owned runtime behavior.
 
-vLLM 0.26.0 validates native microbatching by requiring a supported all2all
+vLLM 0.23.0 validates native microbatching by requiring a supported all2all
 backend. AFD ubatching uses plugin connectors instead, so this patch only
 relaxes that assertion for configs with active ``additional_config["afd"]``.
 It also replaces the platform's default worker with the role-specific AFD
@@ -160,7 +160,6 @@ def _should_relax_engine_args_backend(engine_args: EngineArgs) -> bool:
     return backend not in {
         "deepep_low_latency",
         "deepep_high_throughput",
-        "nixl_ep",
     }
 
 
@@ -178,7 +177,6 @@ def _should_relax_vllm_config_backend(vllm_config: VllmConfig) -> bool:
     return backend not in {
         "deepep_low_latency",
         "deepep_high_throughput",
-        "nixl_ep",
     }
 
 

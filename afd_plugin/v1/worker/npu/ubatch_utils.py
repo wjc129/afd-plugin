@@ -4,7 +4,7 @@
 
 Originally copied from vLLM-Ascend commit
 ``cdd212830271249a1cafcb850c210133f21771c5`` and aligned with the attention
-metadata schema at commit ``80d8c194f``. It remains plugin-owned because the
+metadata schema at commit ``f042ad888``. It remains plugin-owned because the
 current vLLM-Ascend release no longer provides NPU ubatch helpers.
 """
 
@@ -316,28 +316,10 @@ def _make_metadata_with_slice(
             if attn_metadata.seq_lens_cpu_upper_bound is not None
             else None
         ),
-        mm_req_doc_ranges=attn_metadata.mm_req_doc_ranges,
-        rswa_prefix_lens=(
-            attn_metadata.rswa_prefix_lens[request_slice]
-            if attn_metadata.rswa_prefix_lens is not None
-            else None
+        prefill_context_parallel_metadata=(
+            attn_metadata.prefill_context_parallel_metadata
         ),
-        context_parallel_metadata=attn_metadata.context_parallel_metadata,
-        group_len=(
-            attn_metadata.group_len[request_slice]
-            if attn_metadata.group_len is not None
-            else None
-        ),
-        group_key_idx=(
-            attn_metadata.group_key_idx[request_slice]
-            if attn_metadata.group_key_idx is not None
-            else None
-        ),
-        group_key_cache_idx=(
-            attn_metadata.group_key_cache_idx[request_slice]
-            if attn_metadata.group_key_cache_idx is not None
-            else None
-        ),
+        kvcomp_metadata=attn_metadata.kvcomp_metadata,
     )
     metadata.encoder_seq_lens = (
         attn_metadata.encoder_seq_lens[request_slice]

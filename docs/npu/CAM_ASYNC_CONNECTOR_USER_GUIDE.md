@@ -11,17 +11,16 @@ rank mapping, data flow, startup requirements, and current limitations. The
 contains the historical multi-node launch commands and measurements.
 
 > [!WARNING]
-> The vLLM 0.26 upgrade did not revalidate CAM async. The linked PCP8 recipe and
+> The current vLLM 0.23 source port has not revalidated CAM async. The linked PCP8 recipe and
 > its measurements were produced with the former vLLM/vLLM-Ascend 0.19.1
-> environment. vLLM-Ascend 0.26 removes PCP from model runner v1, so those
-> commands are retained as historical experiment records, not as a supported
-> v0.26 deployment recipe. Current v0.26 support claims cover the synchronous
-> `CAMP2pAFDConnector` path.
+> environment. Those commands are retained as historical experiment records,
+> not as a supported v0.23 deployment recipe. The synchronous and asynchronous
+> v0.23 paths both require matching Ascend hardware validation.
 
 ## When to use this connector
 
 The retained implementation describes an asynchronous Ascend NPU prefill path
-with the following constraints. These are code-level constraints, not a v0.26
+with the following constraints. These are code-level constraints, not a v0.23
 hardware support claim:
 
 - CAM operator packages are installed on every node;
@@ -209,7 +208,7 @@ current async MoE metadata path does not support it.
 
 ## Requirements
 
-The CAM async v0.26 path was verified with:
+For historical reference, the previous CAM async v0.26 path was verified with:
 
 - Ascend 910C;
 - Python 3.12;
@@ -223,7 +222,8 @@ The CAM async v0.26 path was verified with:
 The nightly image identifier records the validation environment; it is not a
 promise of a stable public pull tag. Some development package metadata in that
 image still reports a `0.19.1rc2.dev1327` version. The source commits above are
-the authoritative compatibility baseline for this v0.26 upgrade.
+the historical compatibility baseline for that v0.26 validation, not for the
+current v0.23 source port.
 
 Install the CAM packages from the repository root inside the container:
 

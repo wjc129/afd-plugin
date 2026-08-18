@@ -152,7 +152,7 @@ def run_attention_gate_afd_forward(
             llama_4_scaling,
         )
 
-        # vLLM v0.26 profiles Attention with a local dummy forward and does not
+        # vLLM v0.23 profiles Attention with a local dummy forward and does not
         # start the connector-driven FFN loop for a matching profile request.
         # Launching CAM collectives here would therefore block on unmatched
         # synthetic routing metadata; only the local Attention profile is run.

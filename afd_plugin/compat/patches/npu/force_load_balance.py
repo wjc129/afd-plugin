@@ -25,10 +25,10 @@ from vllm.logger import logger
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import (
     _EXTRA_CTX,
-    _MEGA_MOE_SUPPORTED,
     MoECommType,
 )
 from vllm_ascend.distributed.parallel_state import get_mc2_group
+from vllm_ascend.flash_common3_context import get_flash_common3_context
 from vllm_ascend.ops.fused_moe.experts_selector import (
     select_experts,
     zero_experts_compute,
@@ -199,6 +199,7 @@ def __init__(self):
         vllm_config.compilation_config.mode == CompilationMode.VLLM_COMPILE
         and not vllm_config.model_config.enforce_eager
     )
+    self.multistream_overlap_gate = ascend_config.multistream_overlap_gate
     self.dynamic_eplb = ascend_config.eplb_config.dynamic_eplb
     self.in_dtype = vllm_config.model_config.dtype
     self.supports_eplb = True
@@ -283,24 +284,33 @@ def apply(
             f"zero_expert_type={zero_expert_type}"
         )
 
-    topk_weights, topk_ids = select_experts(
-        hidden_states=x,
-        router_logits=router_logits,
-        top_k=top_k,
-        use_grouped_topk=use_grouped_topk,
-        renormalize=renormalize,
-        topk_group=topk_group,
-        num_expert_group=num_expert_group,
-        custom_routing_function=custom_routing_function,
-        scoring_func=scoring_func,
-        routed_scaling_factor=routed_scaling_factor,
-        e_score_correction_bias=e_score_correction_bias,
-        mix_placement=mix_placement,
-        num_logical_experts=router_logits.shape[1],
-        num_shared_experts=n_shared_experts,
-        num_experts=num_logical_experts,
-        tid2eid=tid2eid,
-    )
+    if self.multistream_overlap_gate:
+        fc3_context = get_flash_common3_context()
+        assert fc3_context is not None, (
+            "[vllm-ascend/W8A8_DYNAMIC] flash_common3 context is required "
+            "when multistream_overlap_gate is enabled."
+        )
+        topk_weights = fc3_context.topk_weights
+        topk_ids = fc3_context.topk_ids
+    else:
+        topk_weights, topk_ids = select_experts(
+            hidden_states=x,
+            router_logits=router_logits,
+            top_k=top_k,
+            use_grouped_topk=use_grouped_topk,
+            renormalize=renormalize,
+            topk_group=topk_group,
+            num_expert_group=num_expert_group,
+            custom_routing_function=custom_routing_function,
+            scoring_func=scoring_func,
+            routed_scaling_factor=routed_scaling_factor,
+            e_score_correction_bias=e_score_correction_bias,
+            mix_placement=mix_placement,
+            num_logical_experts=router_logits.shape[1],
+            num_shared_experts=n_shared_experts,
+            num_experts=num_logical_experts,
+            tid2eid=tid2eid,
+        )
     assert topk_ids is not None
     assert topk_weights is not None
     if zero_expert_num > 0 and zero_expert_type is not None:
@@ -358,12 +368,10 @@ def apply(
     assert topk_weights is not None
     topk_weights = topk_weights.to(self.in_dtype)
 
-    act_name = getattr(activation, "value", activation)
     moe_comm_method = _EXTRA_CTX.moe_comm_method
     fused_scale_flag = (
         _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2
         and get_ascend_config().enable_fused_mc2 == 1
-        and act_name != "swigluoai_uninterleave"
     )
     if self.dynamic_eplb:
         w1 = layer.w13_weight_list
@@ -384,13 +392,6 @@ def apply(
         w2_scale_bias = (
             [torch.tensor([], dtype=torch.float32)] if fused_scale_flag else None
         )
-    elif fused_scale_flag and _MEGA_MOE_SUPPORTED:
-        w1 = layer.cann_mega_moe_w13_weight_list
-        w1_scale = layer.cann_mega_moe_fused_w1_scale_list
-        w2 = layer.cann_mega_moe_w2_weight_list
-        w2_scale = layer.cann_mega_moe_fused_w2_scale_list
-        w1_scale_bias = None
-        w2_scale_bias = None
     else:
         w1 = [layer.w13_weight]
         w1_scale = (
@@ -430,8 +431,6 @@ def apply(
             w1_scale_bias=w1_scale_bias,
             w2_scale_bias=w2_scale_bias,
             swiglu_limit=layer.swiglu_limit,
-            swiglu_alpha=getattr(layer, "swiglu_alpha", 1.0),
-            swiglu_beta=getattr(layer, "swiglu_beta", 0.0),
         )
     )
     if zero_expert_num > 0 and zero_expert_type is not None:

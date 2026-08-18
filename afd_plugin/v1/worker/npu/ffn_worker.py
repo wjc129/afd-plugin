@@ -9,6 +9,7 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 import torch
+from vllm.config import VllmConfig
 from vllm.v1.worker.worker_base import CompilationTimes
 from vllm.v1.worker.workspace import init_workspace_manager
 from vllm_ascend.worker.worker import NPUWorker
@@ -39,14 +40,29 @@ class AFDNPUFFNWorker(NPUWorker):
 
     afd_expected_role = "ffn"
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        local_rank: int,
+        rank: int,
+        distributed_init_method: str,
+        is_driver_worker: bool = False,
+        **kwargs: Any,
+    ) -> None:
         # Import after vLLM-Ascend completes platform initialization. Importing
         # its MoE modules from the general-plugin hook can race Ascend's own
         # ops package initialization and leave DeviceOperator partially loaded.
         import afd_plugin.compat.patches.npu.force_load_balance  # noqa: F401
 
         apply_afd_ascend_patches_if_needed()
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            vllm_config,
+            local_rank,
+            rank,
+            distributed_init_method,
+            is_driver_worker,
+            **kwargs,
+        )
         self._ffn_thread: threading.Thread | None = None
         self._ffn_shutdown_event: threading.Event | None = None
         self._ffn_loop_error: BaseException | None = None

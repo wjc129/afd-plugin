@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from vllm.config import VllmConfig
 from vllm.v1.worker.workspace import init_workspace_manager
 from vllm_ascend.worker.worker import NPUWorker
 
@@ -30,9 +31,24 @@ class AFDNPUAttentionWorker(NPUWorker):
 
     afd_expected_role = "attention"
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        vllm_config: VllmConfig,
+        local_rank: int,
+        rank: int,
+        distributed_init_method: str,
+        is_driver_worker: bool = False,
+        **kwargs: Any,
+    ) -> None:
         apply_afd_ascend_patches_if_needed()
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            vllm_config,
+            local_rank,
+            rank,
+            distributed_init_method,
+            is_driver_worker,
+            **kwargs,
+        )
 
     def init_device(self) -> None:
         assert_compatible_afd_stack(

@@ -74,7 +74,6 @@ def __init__(
 
     # Setup Model.
     self.model_executor = executor_class(vllm_config)
-    self._pooler_config_logged = False
     if executor_fail_callback is not None:
         self.model_executor.register_failure_callback(executor_fail_callback)
 
@@ -114,9 +113,6 @@ def __init__(
         hash_block_size=hash_block_size,
     )
     self.use_spec_decode = vllm_config.speculative_config is not None
-    self.check_for_draft_tokens = (
-        self.use_spec_decode or vllm_config.model_config.is_diffusion
-    )
     if self.scheduler.connector is not None:  # type: ignore
         self.model_executor.init_kv_output_aggregator(self.scheduler.connector)  # type: ignore
 
@@ -247,22 +243,6 @@ def _initialize_kv_caches(self, vllm_config: VllmConfig) -> KVCacheConfig:
     # Get all kv cache needed by the model
     kv_cache_specs = self.model_executor.get_kv_cache_specs()
 
-    if any(
-        getattr(spec, "non_causal", False)
-        for worker_specs in kv_cache_specs
-        for spec in worker_specs.values()
-    ):
-        if vllm_config.scheduler_config.enable_chunked_prefill:
-            core_module.logger.info(
-                "Disabling chunked prefill: model has non-causal attention layers."
-            )
-            vllm_config.scheduler_config.enable_chunked_prefill = False
-        if vllm_config.cache_config.enable_prefix_caching:
-            core_module.logger.info(
-                "Disabling prefix caching: model has non-causal attention layers."
-            )
-            vllm_config.cache_config.enable_prefix_caching = False
-
     has_kv_cache = any(kv_cache_spec for kv_cache_spec in kv_cache_specs)
     if has_kv_cache:
         if core_module.envs.VLLM_ELASTIC_EP_SCALE_UP_LAUNCH:
@@ -306,12 +286,6 @@ def _initialize_kv_caches(self, vllm_config: VllmConfig) -> KVCacheConfig:
         vllm_config.cache_config.block_size = min(
             g.kv_cache_spec.block_size for g in kv_cache_groups
         )
-        num_tokens, max_concurrency = core_module.get_kv_cache_capacity(
-            vllm_config,
-            scheduler_kv_cache_config,
-        )
-        vllm_config.cache_config.kv_cache_size_tokens = num_tokens
-        vllm_config.cache_config.kv_cache_max_concurrency = max_concurrency
 
     vllm_config.validate_block_size()
 

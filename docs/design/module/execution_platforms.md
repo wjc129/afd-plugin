@@ -289,15 +289,16 @@ an expansion of the supported runtime contract.
 | --- | --- | --- | --- | --- |
 | CUDA + `P2pNcclAFDConnector` | Eager or `FULL_DECODE_ONLY` CUDA Graph | Native DBO, exactly two ubatches | DeepSeek remote-experts boundary; Attention-side or FFN-side gate; EPLB rejected on the Attention remote-experts role | GPU serving, graph, TP/EP, DP/EP, DBO, profiler, model, and accuracy E2E tests |
 | Ascend + `CAMP2pAFDConnector` | Eager or current ACL Graph path | Native DBO, exactly two ubatches | Common and connector-local `compute_gate_on_attention=false`; `connector_extra_config.quant_mode=0`; plugin CANN ops required | NPU serving, graph, TP, ops, profiler, model, and accuracy E2E tests |
-| Ascend + `CAMAsyncAFDConnector` | Eager only | Native DBO rejected; optional async MoE ubatching uses exactly two request-boundary stages | Experimental code path; the former PCP8 recipe is incompatible with v0.26 model runner v1 and was not revalidated in this upgrade | Unit coverage only for the retained connector/model adapters; no v0.26 hardware support claim |
+| Ascend + `CAMAsyncAFDConnector` | Eager only | Native DBO rejected; optional async MoE ubatching uses exactly two request-boundary stages | Experimental code path; the former PCP8 recipe remains a v0.19.1rc1 historical record and was not revalidated for the v0.23 port | Unit coverage only for the retained connector/model adapters; no v0.23 hardware support claim |
 
-The validated CUDA and synchronous Ascend paths use vLLM 0.26.0 and model
-runner v1. GPU/NPU rank topology and connector resource rules remain owned by
+The source-adapted CUDA and synchronous Ascend paths target vLLM 0.23.0 and
+model runner v1. Hardware E2E validation is still required for this port.
+GPU/NPU rank topology and connector resource rules remain owned by
 [connector contracts](connector_contracts.md).
 
 The repository does not record a canonical CUDA container or a released
-vLLM-Ascend v0.26 container. The NPU implementation records source commit
-`80d8c194f`; environment evidence is not an authoritative package tag.
+vLLM-Ascend v0.23 container. The NPU implementation records source commit
+`f042ad888`; environment evidence is not an authoritative package tag.
 
 ## Failure and cleanup boundaries
 
@@ -329,7 +330,7 @@ E2E paths listed above.
 
 ## Limitations and open issues
 
-The official vLLM-Ascend v0.26 tag/container and canonical CUDA/Ascend versus
+The official vLLM-Ascend v0.23 container and canonical CUDA/Ascend versus
 GPU/NPU terminology are unresolved. This document uses CUDA/Ascend for backend
 mechanisms and preserves GPU/NPU where it appears in public names, environment
 variables, or test markers. See

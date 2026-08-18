@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import copy
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import nullcontext
 from functools import partial
 from typing import Any
 
@@ -32,7 +32,10 @@ from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import EncoderOnlyAttentionSpec, KVCacheConfig
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.ubatch_utils import UBatchSlices
-from vllm_ascend.ascend_forward_context import set_ascend_forward_context
+from vllm_ascend.ascend_forward_context import (
+    _EXTRA_CTX,
+    set_ascend_forward_context,
+)
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.context_parallel.dsa_cp import (
     AscendDSACPMetadataBuilder,
@@ -49,7 +52,6 @@ from vllm_ascend.compilation.acl_graph import ACLGraphWrapper
 from vllm_ascend.ops.rotary_embedding import update_cos_sin
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
 from vllm_ascend.spec_decode.draft_proposer import AscendDraftModelProposer
-from vllm_ascend.spec_decode.dspark_proposer import AscendDSparkProposer
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
 from vllm_ascend.spec_decode.step3p5 import AscendStep3p5MTPProposer
 from vllm_ascend.utils import (
@@ -64,6 +66,7 @@ from vllm_ascend.worker.model_runner_v1 import (
     NPUModelRunner,
     PerLayerAttnMetadata,
 )
+from vllm_ascend.worker.utils import copy_snapshot_to_gpu
 
 from afd_plugin.compat.npu import (
     fail_if_unsupported_npu_afd_features,
@@ -241,7 +244,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         # ### PATCH END: AFD live execution scope
         return result
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner._model_forward.
     # Patch reason: the upstream forward path does not install AFD stage metadata
     # or expose Ascend ubatch slices to the model wrapper.
@@ -283,6 +286,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             self._update_full_graph_params_if_needed(
                 forward_context,
                 num_tokens_padded,
+                positions,
             )
         # ### PATCH START: DSV4 graph-safe IDs side channel
         # torch_npu lowers dist.send inside a compiled model to an op whose
@@ -299,6 +303,14 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             if input_ids is None:
                 raise RuntimeError("DSV4 Attention model forward requires input_ids")
             connector.send_input_ids(input_ids, ubatch_idx=0)
+        if (
+            not self.enable_enpu
+            and self.compilation_config.cudagraph_mode == CUDAGraphMode.PIECEWISE
+        ):
+            is_draft_eagle = _EXTRA_CTX.is_draft_model and self.use_eagle
+            if not is_draft_eagle:
+                torch.npu.current_stream().synchronize()
+
         previous_pretransfer = getattr(
             forward_context,
             "afd_input_ids_pretransferred",
@@ -314,6 +326,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             self._update_full_graph_params_if_needed(
                 forward_context,
                 num_tokens_padded,
+                positions,
             )
 
         # ### PATCH START: AFD defers FlashComm gather to the ubatch wrapper
@@ -326,7 +339,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         # ### PATCH END: AFD defers FlashComm gather to the ubatch wrapper
         return hidden_states
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner._build_attention_metadata.
     # Patch reason: upstream accepts ubatch slices but does not construct separate
     # Ascend attention metadata for each NPU ubatch.
@@ -494,7 +507,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         }
         return full_metadata
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner._build_attention_metadata.
     # Patch reason: upstream builds one metadata object even when AFD schedules
     # two NPU execution stages.
@@ -540,8 +553,8 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
 
         kv_cache_groups = self.kv_cache_config.kv_cache_groups
 
-        def _get_dcp_metadata(block_table_tensor: torch.Tensor):
-            if not self.use_dcp:
+        def _get_pcp_metadata(block_table_tensor: torch.Tensor):
+            if not self.use_cp:
                 return None, block_table_tensor
 
             fixed_decode_seq_lens_cpu = None
@@ -551,7 +564,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                 ].numpy()
 
             assert num_reqs_padded is not None
-            return self.dcp_manager.generate_dcp_metadata(
+            return self.pcp_manager.generate_pcp_metadata(
                 num_tokens,
                 self.query_lens,
                 self.input_batch,
@@ -565,6 +578,25 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         def _get_block_table_and_slot_mapping(kv_cache_gid: int):
             assert num_reqs_padded is not None and num_tokens_padded is not None
             kv_cache_spec = kv_cache_groups[kv_cache_gid].kv_cache_spec
+            if self.pcp_size > 1:
+                total_num_pcp_pads = sum(
+                    self.pcp_manager.num_pcp_pads_cpu[:num_reqs]
+                )
+                if self.pcp_manager.pcp_use_hybrid_attn:
+                    num_scheduled_tokens_padded = (
+                        self.pcp_manager.num_scheduled_tokens_padded
+                    )
+                    assert num_scheduled_tokens_padded is not None
+                    maybe_pcp_full_tokens = (
+                        sum(num_scheduled_tokens_padded) * self.pcp_size
+                        - total_num_pcp_pads
+                    )
+                else:
+                    maybe_pcp_full_tokens = (
+                        num_tokens * self.pcp_size - total_num_pcp_pads
+                    )
+            else:
+                maybe_pcp_full_tokens = num_tokens_padded
             if isinstance(kv_cache_spec, EncoderOnlyAttentionSpec):
                 blk_table_tensor = torch.zeros(
                     (num_reqs_padded, 1),
@@ -578,10 +610,18 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                 )
             else:
                 blk_table = self.input_batch.block_table[kv_cache_gid]
-                slot_mapping = blk_table.slot_mapping.gpu[:num_tokens_padded]
+                slot_mapping = blk_table.slot_mapping.gpu[:maybe_pcp_full_tokens]
                 blk_table_tensor = blk_table.get_device_tensor()[:num_reqs_padded]
-                slot_mapping[num_tokens:num_tokens_padded].fill_(-1)
-                blk_table_tensor[num_reqs:num_reqs_padded].fill_(0)
+                if self.pcp_size == 1:
+                    slot_mapping[num_tokens:num_tokens_padded].fill_(-1)
+                    blk_table_tensor[num_reqs:num_reqs_padded].fill_(0)
+            if self.pcp_size > 1:
+                slot_mapping = self.pcp_manager.get_padded_slot_mapping(
+                    num_tokens,
+                    num_tokens_padded,
+                    slot_mapping,
+                    kv_cache_gid,
+                )
             if (
                 self.model_config.enable_return_routed_experts
                 and kv_cache_gid == 0
@@ -594,7 +634,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             return blk_table_tensor, slot_mapping
 
         block_table_gid_0, slot_mapping_gid_0 = _get_block_table_and_slot_mapping(0)
-        self.long_seq_metadata, block_table_gid_0 = _get_dcp_metadata(
+        self.long_seq_metadata, block_table_gid_0 = _get_pcp_metadata(
             block_table_gid_0,
         )
         num_computed_tokens_cpu = self.input_batch.num_computed_tokens_cpu_tensor[
@@ -632,10 +672,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             positions_cpu=self._dsa_positions_cpu_buf if self.use_compress else None,
             attn_state=self.attn_state,
             decode_token_per_req=self.decode_token_per_req,
-            context_parallel_metadata=self.long_seq_metadata,
-            group_len=self.group_len.gpu[:num_reqs_padded],
-            group_key_idx=self.group_key_idx.gpu[:num_reqs_padded],
-            group_key_cache_idx=self.group_key_cache_idx.gpu[:num_reqs_padded],
+            prefill_context_parallel_metadata=self.long_seq_metadata,
         )
 
         if logits_indices is not None and self.cache_config.kv_sharing_fast_prefill:
@@ -760,7 +797,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                 )
             if self.speculative_config and isinstance(
                 self.drafter,
-                AscendStep3p5MTPProposer | AscendDSparkProposer,
+                AscendStep3p5MTPProposer,
             ):
                 self.drafter.set_per_group_attn_metadata(
                     kv_cache_gid,
@@ -772,13 +809,18 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                     self.drafter,
                     AscendEagleProposer
                     | AscendDraftModelProposer
-                    | AscendDflashProposer
-                    | AscendDSparkProposer,
+                    | AscendDflashProposer,
                 ):
                     if self.drafter.attn_layer_names[0] in kv_cache_group.layer_names:
                         spec_decode_common_attn_metadata = cm
                 else:
                     spec_decode_common_attn_metadata = cm
+            if self.enable_hamming_sparse is True:
+                from vllm_ascend.attention.kvcomp_attn.attention_utils import (
+                    build_kvcomp_metadata,
+                )
+
+                build_kvcomp_metadata(self.kvcomp_meta_data, cm)
             for attn_gid in range(len(self.attn_groups[kv_cache_gid])):
                 # ### PATCH START: AFD common-metadata split
                 ubatch_common_metadata = split_attn_metadata(
@@ -938,7 +980,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             self._afd_pending_metadata = None
             self._afd_async_moe_ubatch_metadata = None
 
-    # Upstream source: vLLM v0.26.0 commit 568afb3a1,
+    # Upstream source: vLLM v0.23.0 commit 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665,
     # GPUModelRunner._warmup_and_capture.
     # Patch reason: AFD needs both single-stage and two-stage Ascend graph keys,
     # because live decode may fall below the DBO threshold.
@@ -952,7 +994,6 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         profile_seq_lens: int | None = None,
         allow_microbatching: bool = False,
         num_warmups: int | None = None,
-        profiler: AbstractContextManager[Any] | None = None,
     ):
         """Capture both single-stage and ubatched FFN graph keys.
 
@@ -963,8 +1004,6 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         """
 
         # ### PATCH START: AFD dual graph capture
-        if profiler is None:
-            profiler = nullcontext()
         if num_warmups is None:
             num_warmups = self.compilation_config.cudagraph_num_of_warmups
 
@@ -975,7 +1014,6 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                 profile_seq_lens=profile_seq_lens,
                 allow_microbatching=False,
                 num_warmups=int(num_warmups),
-                profiler=nullcontext(),
             )
 
         self._afd_warmup_and_capture_once(
@@ -984,7 +1022,6 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             profile_seq_lens=profile_seq_lens,
             allow_microbatching=allow_microbatching,
             num_warmups=int(num_warmups),
-            profiler=profiler,
         )
         # ### PATCH END: AFD dual graph capture
 
@@ -996,7 +1033,6 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
         profile_seq_lens: int | None,
         allow_microbatching: bool,
         num_warmups: int,
-        profiler: AbstractContextManager[Any],
     ) -> None:
         force_attention = cudagraph_runtime_mode == CUDAGraphMode.FULL
 
@@ -1037,11 +1073,8 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                     )
                 self._afd_suppress_metadata_send = True
 
-            with (
-                profiler,
-                torch.profiler.record_function(
-                    f"capture_{desc.num_tokens}_{cudagraph_runtime_mode.name}",
-                ),
+            with torch.profiler.record_function(
+                f"capture_{desc.num_tokens}_{cudagraph_runtime_mode.name}",
             ):
                 self._dummy_run(
                     desc.num_tokens,
@@ -1059,7 +1092,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             self._afd_suppress_metadata_send = previous_suppress_send
             self._afd_pending_metadata = previous_metadata
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner._dummy_run.
     # Patch reason: upstream's dummy path forces ubatch slices to None, so it
     # cannot warm or capture the AFD two-stage Ascend execution path.
@@ -1140,18 +1173,18 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             force_num_active_loras=num_active_loras,
         )
         # ### PATCH END: AFD dummy ubatch decision
-        if self.use_dcp:
-            self.dcp_manager.init_batch_info(
+        if self.use_cp:
+            self.pcp_manager.init_batch_info(
                 num_scheduled_tokens,
                 num_reqs,
                 self.input_batch.num_computed_tokens_cpu,
                 self.input_batch.num_prompt_tokens,
             )
             if self.speculative_config:
-                self.dcp_manager.query_lens_full.cpu[:num_reqs] = torch.from_numpy(
-                    num_scheduled_tokens,
+                self.pcp_manager.query_lens_pcp_full.cpu[:num_reqs] = (
+                    torch.from_numpy(num_scheduled_tokens)
                 )
-                self.dcp_manager.query_lens_full.copy_to_gpu()
+                self.pcp_manager.query_lens_pcp_full.copy_to_gpu()
         if cudagraph_runtime_mode is None:
             cudagraph_runtime_mode = _cudagraph_mode
         else:
@@ -1173,7 +1206,8 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
 
         ubatch_slices, ubatch_slices_padded = None, None
         attn_metadata: PerLayerAttnMetadata | None = None
-        with self.synchronize_input_prep():
+        # vllm-ascend 0.23 performs this preparation synchronously.
+        with nullcontext():
             if self._should_build_dummy_attn_metadata(
                 force_attention,
                 is_profile,
@@ -1207,12 +1241,12 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                     self.query_pos.np,
                 )
                 self.query_start_loc.np[1 : num_reqs_padded + 1] = cum_num_tokens
-                self.query_start_loc.copy_to_gpu()
+                copy_snapshot_to_gpu(self.query_start_loc)
                 if self._has_gdn:
                     self.gdn_query_start_loc.np[1 : num_reqs_padded + 1] = (
                         cum_num_tokens
                     )
-                    self.gdn_query_start_loc.copy_to_gpu()
+                    copy_snapshot_to_gpu(self.gdn_query_start_loc)
 
                 if not profile_cpp:
                     num_reqs_padded = self._pad_query_start_loc_for_fia(
@@ -1704,7 +1738,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             synced_cudagraph_mode,
         )
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner._determine_batch_execution_and_padding.
     # Patch reason: upstream intentionally leaves NPU microbatching disabled and
     # uses its native DP synchronization, which cannot coordinate AFD stages.
@@ -1834,7 +1868,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
             cudagraph_stats,
         )
 
-    # Upstream source: vllm-ascend commit 80d8c194f,
+    # Upstream source: vllm-ascend commit f042ad88882e22a43af323b0df5691467bad8553,
     # NPUModelRunner.sync_and_slice_intermediate_tensors.
     # Patch reason: upstream sizes PP intermediate tensors from the combined
     # token count, which is too small when SP rounds each AFD ubatch separately.

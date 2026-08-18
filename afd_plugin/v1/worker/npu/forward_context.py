@@ -52,11 +52,6 @@ def create_ascend_forward_context(
         parent_kwargs[AFD_MLA_GRAPH_PARAMS_KEY] = mla_graph_params
 
     ubatch_slice = ubatch_slices[ubatch_num]
-    is_padding = (
-        cur_forward_context.is_padding[ubatch_slice.token_slice]
-        if cur_forward_context.is_padding is not None
-        else None
-    )
     new_forward_context = ForwardContext(
         no_compile_layers=vllm_config.compilation_config.static_forward_context,
         all_moe_layers=cur_forward_context.all_moe_layers,
@@ -68,7 +63,6 @@ def create_ascend_forward_context(
         ubatch_slices=ubatch_slices,
         skip_compiled=skip_compiled,
         additional_kwargs=parent_kwargs,
-        is_padding=is_padding,
     )
 
     num_tokens = ubatch_slice.num_tokens

@@ -66,7 +66,7 @@ class AFDDeepseekV4DecoderLayer(native.DeepseekV2DecoderLayer):
     # Patch functionality: construct Attention/HC or MoE, never both.
     # Signature: matches the pinned upstream function; no added parameters.
     # Upstream: vllm-ascend/vllm_ascend/models/deepseek_v4.py
-    # Commit: 80d8c194f7584b17fe08065ea99a130916f6b0e7
+    # Commit: f042ad88882e22a43af323b0df5691467bad8553
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -181,7 +181,7 @@ class AFDDeepseekV4DecoderLayer(native.DeepseekV2DecoderLayer):
     # Patch functionality: the Attention role invokes a parameter-free remote proxy.
     # Signature: matches the pinned upstream function; no added parameters.
     # Upstream: vllm-ascend/vllm_ascend/models/deepseek_v4.py
-    # Commit: 80d8c194f7584b17fe08065ea99a130916f6b0e7
+    # Commit: f042ad88882e22a43af323b0df5691467bad8553
     def forward(
         self,
         positions: torch.Tensor,
@@ -248,7 +248,7 @@ class AFDDeepseekV4Model(native.DeepseekV4Model):
     # Patch functionality: build role-owned modules and omit the disabled MTP buffer.
     # Signature: matches the pinned upstream function; no added parameters.
     # Upstream: vllm-ascend/vllm_ascend/models/deepseek_v4.py
-    # Commit: 80d8c194f7584b17fe08065ea99a130916f6b0e7
+    # Commit: f042ad88882e22a43af323b0df5691467bad8553
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         # ### PATCH START: initialize role-aware storage without native allocation.
         nn.Module.__init__(self)
@@ -361,7 +361,7 @@ class AFDDeepseekV4Model(native.DeepseekV4Model):
     # Patch functionality: run role-aware layers and omit disabled MTP state.
     # Signature: matches the pinned upstream function; no added parameters.
     # Upstream: vllm-ascend/vllm_ascend/models/deepseek_v4.py
-    # Commit: 80d8c194f7584b17fe08065ea99a130916f6b0e7
+    # Commit: f042ad88882e22a43af323b0df5691467bad8553
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -431,7 +431,7 @@ class AFDDeepseekV4ForCausalLM(native.AscendDeepseekV4ForCausalLM):
     # Patch functionality: build the head only for Attention and register FFN MoE.
     # Signature: matches the pinned upstream function; no added parameters.
     # Upstream: vllm-ascend/vllm_ascend/models/deepseek_v4.py
-    # Commit: 80d8c194f7584b17fe08065ea99a130916f6b0e7
+    # Commit: f042ad88882e22a43af323b0df5691467bad8553
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         # ### PATCH START: establish the AFD role before allocating modules.
         nn.Module.__init__(self)

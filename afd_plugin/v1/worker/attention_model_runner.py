@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -493,8 +493,8 @@ class AFDAttentionModelRunner(GPUModelRunner):
     # Patch functionality: preserve the upstream warmup/capture flow while
     # publishing replayable connector state before formal graph capture.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_model_runner.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_model_runner.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def _warmup_and_capture(
         self,
         desc: BatchDescriptor,
@@ -502,7 +502,6 @@ class AFDAttentionModelRunner(GPUModelRunner):
         profile_seq_lens: int | None = None,
         allow_microbatching: bool = False,
         num_warmups: int | None = None,
-        profiler: AbstractContextManager[Any] | None = None,
     ):
         """Mirror vLLM warmup/capture while marking AFD warmup metadata.
 
@@ -512,8 +511,6 @@ class AFDAttentionModelRunner(GPUModelRunner):
         from graph-capture metadata.
         """
 
-        if profiler is None:
-            profiler = nullcontext()
         if num_warmups is None:
             num_warmups = self.compilation_config.cudagraph_num_of_warmups
         force_attention = cudagraph_runtime_mode == CUDAGraphMode.FULL
@@ -564,11 +561,8 @@ class AFDAttentionModelRunner(GPUModelRunner):
                     None,
                 )
                 self._afd_suppress_metadata_send = True
-            with (
-                profiler,
-                torch.profiler.record_function(
-                    f"capture_{desc.num_tokens}_{cudagraph_runtime_mode.name}"
-                ),
+            with torch.profiler.record_function(
+                f"capture_{desc.num_tokens}_{cudagraph_runtime_mode.name}"
             ):
                 self._dummy_run(
                     desc.num_tokens,
@@ -591,8 +585,8 @@ class AFDAttentionModelRunner(GPUModelRunner):
     # Patch functionality: preserve native GPUModelRunner cleanup, then close
     # AFD-owned resources even when native cleanup raises.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_model_runner.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_model_runner.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def shutdown(self) -> None:
         # ### PATCH START: extend native shutdown with AFD resource cleanup.
         stop_afd_gpu_profiler(self.prof)

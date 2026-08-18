@@ -56,17 +56,19 @@ patch modules must not become a general home for AFD-owned functionality.
 
 ## Supported upstream boundary
 
-The package extra pins vLLM `0.26.0`, and
+The package extra pins vLLM `0.23.0`, and
 [`compat/vllm.py`](../../../afd_plugin/compat/vllm.py) enforces the same target.
 Direct strict calls raise for a missing or different vLLM; plugin registration
 calls the check with `strict=False`, so it warns and continues. This warning
 policy does not make another vLLM release supported.
 
-The NPU v0.26 refresh is based on vLLM-Ascend commit
-[`80d8c194f`](https://github.com/vllm-project/vllm-ascend/commit/80d8c194f7584b17fe08065ea99a130916f6b0e7).
+The NPU v0.23 source port is based on vLLM-Ascend commit
+[`f042ad888`](https://github.com/vllm-project/vllm-ascend/commit/f042ad88882e22a43af323b0df5691467bad8553)
+from `releases/v0.23.0`.
 The repository does not declare a vLLM-Ascend package dependency in
 `pyproject.toml`, so this source commit and the recorded NPU validation are the
-compatibility evidence rather than a released package or container tag.
+compatibility baseline rather than a released package or container tag. The
+v0.23 port still requires matching NPU hardware validation.
 
 ## Implementation evidence
 

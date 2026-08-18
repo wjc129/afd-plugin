@@ -244,8 +244,8 @@ class AFDDeepseekV2RemoteExpertsMoE(native.DeepseekV2MoE):
     # constructing only the gate owned by Attention and a parameter-free proxy.
     # Signature: AFD-owned; adds layer_idx and compute_gate_on_attention and omits
     # quant_config because no local expert kernel is constructed.
-    # Upstream: vLLM v0.26.0, vllm/model_executor/models/deepseek_v2.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/model_executor/models/deepseek_v2.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def __init__(
         self,
         *,
@@ -259,12 +259,10 @@ class AFDDeepseekV2RemoteExpertsMoE(native.DeepseekV2MoE):
         nn.Module.__init__(self)
         self.is_sequence_parallel = parallel_config.use_sequence_parallel_moe
 
-        router_dtype = native._get_moe_router_dtype(config)
         if compute_gate_on_attention:
             self.gate = native.GateLinear(
                 config.hidden_size,
                 config.n_routed_experts,
-                out_dtype=router_dtype,
                 prefix=f"{prefix}.gate",
             )
             if getattr(config, "topk_method", None) == "noaux_tc":
@@ -296,8 +294,8 @@ class AFDDeepseekV2DecoderLayer(native.DeepseekV2DecoderLayer):
     # Patch reason: native DeepSeek constructs both Attention and FFN modules.
     # Patch functionality: construct only the modules owned by the active AFD role.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/model_executor/models/deepseek_v2.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/model_executor/models/deepseek_v2.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def __init__(
         self,
         vllm_config: VllmConfig,
@@ -342,14 +340,6 @@ class AFDDeepseekV2DecoderLayer(native.DeepseekV2DecoderLayer):
             and layer_idx >= config.first_k_dense_replace
             and layer_idx % moe_layer_freq == 0
         )
-        # TODO(wentao): enable SP MoE with PP after the PP boundary logic can safely
-        # send/receive sequence-parallel hidden_states across stages.
-        self.use_sequence_parallel_moe = (
-            parallel_config.use_sequence_parallel_moe
-            and parallel_config.pipeline_parallel_size == 1
-            and is_moe_layer
-        )
-
         # ### PATCH START: construct only the stage owned by this AFD role.
         self.vllm_config = vllm_config
         self.config = config
@@ -398,7 +388,6 @@ class AFDDeepseekV2DecoderLayer(native.DeepseekV2DecoderLayer):
                 quant_config=quant_config,
                 prefix=f"{prefix}.self_attn",
                 topk_indices_buffer=topk_indices_buffer,
-                reduce_results=not self.use_sequence_parallel_moe,
             )
 
             if self.uses_remote_experts:
@@ -443,10 +432,6 @@ class AFDDeepseekV2DecoderLayer(native.DeepseekV2DecoderLayer):
                     parallel_config=parallel_config,
                     quant_config=quant_config,
                     prefix=f"{prefix}.mlp",
-                    # aiter applies routed_scaling_factor internally
-                    apply_routed_scale_to_output=(
-                        not native.rocm_aiter_ops.is_fused_moe_enabled()
-                    ),
                 )
                 if self.compute_gate_on_attention and device_type == "cuda":
                     # Keep the native gate parameter and path for loader/model
@@ -609,8 +594,8 @@ class AFDDeepseekV2Model(native.DeepseekV2Model):
     # Patch reason: native DeepSeek always creates native Decoder layers.
     # Patch functionality: create role-aware AFD layers without full allocation.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/model_executor/models/deepseek_v2.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/model_executor/models/deepseek_v2.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         # ### PATCH START: require AFD activation and avoid native allocation.
         afd_config = parse_afd_config(vllm_config, validate=False)
@@ -634,7 +619,6 @@ class AFDDeepseekV2Model(native.DeepseekV2Model):
         quant_config = vllm_config.quant_config
         self.config = config
         self.device = native.current_platform.device_type
-        self.hidden_size = config.hidden_size
         self.vocab_size = config.vocab_size
         self.is_v32 = hasattr(config, "index_topk")
         # ### PATCH START: allocate the Indexer buffer only on Attention.
@@ -653,7 +637,7 @@ class AFDDeepseekV2Model(native.DeepseekV2Model):
         if native.get_pp_group().is_first_rank:
             self.embed_tokens = native.VocabParallelEmbedding(
                 config.vocab_size,
-                self.hidden_size,
+                config.hidden_size,
                 quant_config=quant_config,
                 prefix=f"{prefix}.embed_tokens",
             )
@@ -673,13 +657,13 @@ class AFDDeepseekV2Model(native.DeepseekV2Model):
         # ### PATCH END
 
         if native.get_pp_group().is_last_rank:
-            self.norm = native.RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
+            self.norm = native.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
             self.norm = native.PPMissingLayer()
         self.make_empty_intermediate_tensors = (
             native.make_empty_intermediate_tensors_factory(
                 ["hidden_states", "residual"],
-                self.hidden_size,
+                config.hidden_size,
             )
         )
         self.aux_hidden_state_layers = tuple[int, ...]()

@@ -19,10 +19,10 @@ from afd_plugin.model_executor.models import deepseek_v2 as adapter  # noqa: E40
 
 CONSTRUCTOR_DIGESTS = {
     "AFDDeepseekV2Model": (
-        "b2e17233e01c98dce0d6640ad97059ee37f70a07488f9c37c2c1885780a43cd7"
+        "f2ac522390b232bb6ced13434bf7cb671704ea81bccdf09be09280b9d81933e2"
     ),
     "AFDDeepseekV2DecoderLayer": (
-        "f1d0b52f12063de217103f8ff1a716e62b743e1653c4dde5ef608fc39a49a780"
+        "e14e96238a21205d3603ff15f0d397314912215cfe56a58f0c8b0ce908a00f42"
     ),
 }
 
@@ -252,7 +252,7 @@ def test_attention_gate_keeps_dense_local_and_gate_at_mlp_path(
     assert not isinstance(dense.mlp, adapter.RemoteFFNProxy)
 
 
-def test_cuda_attention_gate_uses_v026_native_gate_contract(
+def test_cuda_attention_gate_uses_v023_native_gate_contract(
     monkeypatch,
     construction_env,
 ):
@@ -265,7 +265,6 @@ def test_cuda_attention_gate_uses_v026_native_gate_contract(
             self.weight = nn.Parameter(torch.empty(output_size, input_size))
 
     vllm_config = _vllm_config()
-    vllm_config.model_config.hf_config.moe_router_dtype = "float32"
     monkeypatch.setattr(
         adapter.native,
         "current_platform",
@@ -305,10 +304,7 @@ def test_cuda_attention_gate_uses_v026_native_gate_contract(
         (
             8,
             4,
-            {
-                "out_dtype": torch.float32,
-                "prefix": "model.layers.1.mlp.gate",
-            },
+            {"prefix": "model.layers.1.mlp.gate"},
         ),
     ]
     assert list(moe.mlp.experts.parameters()) == []
@@ -427,15 +423,9 @@ def test_npu_ffn_refreshes_native_fused_moe_factory(
     assert factories_seen_by_native_moe == [ascend_factory]
 
 
-@pytest.mark.parametrize(
-    ("aiter_enabled", "apply_routed_scale_to_output"),
-    [(False, True), (True, False)],
-)
-def test_ffn_moe_preserves_v026_native_routed_scale_placement(
+def test_ffn_moe_uses_v023_native_constructor_contract(
     monkeypatch,
     construction_env,
-    aiter_enabled,
-    apply_routed_scale_to_output,
 ):
     moe_calls = []
 
@@ -451,12 +441,6 @@ def test_ffn_moe_preserves_v026_native_routed_scale_placement(
         SimpleNamespace(device_type="cuda"),
     )
     monkeypatch.setattr(adapter.native, "DeepseekV2MoE", _FakeMoE)
-    monkeypatch.setattr(
-        adapter.native.rocm_aiter_ops,
-        "is_fused_moe_enabled",
-        lambda: aiter_enabled,
-    )
-
     moe = _make_layer(
         monkeypatch,
         role="ffn",
@@ -464,7 +448,7 @@ def test_ffn_moe_preserves_v026_native_routed_scale_placement(
         attention_gate=True,
     )
 
-    assert moe_calls[0]["apply_routed_scale_to_output"] is apply_routed_scale_to_output
+    assert "apply_routed_scale_to_output" not in moe_calls[0]
     assert moe.mlp.experts.gate is None
 
 
@@ -580,7 +564,7 @@ def test_model_constructor_uses_role_aware_layers(
     )
     assert construction_env["dense"] == []
     assert construction_env["moe"] == []
-    assert model.hidden_size == vllm_config.model_config.hf_config.hidden_size
+    assert not hasattr(model, "hidden_size")
     assert model.use_mha
     assert model.num_redundant_experts == 0
     assert (

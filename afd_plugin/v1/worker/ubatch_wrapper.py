@@ -41,8 +41,8 @@ class AFDUBatchWrapper(UBatchWrapper):
     # Patch reason: native SM partitioning conflicts with AFD connector work.
     # Patch functionality: disable native SM partitioning only for active AFD.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_ubatch_wrapper.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_ubatch_wrapper.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     @staticmethod
     def _create_sm_control_context(vllm_config: VllmConfig):
         # ### PATCH START: leave all SMs visible to AFD compute and communication.
@@ -55,8 +55,8 @@ class AFDUBatchWrapper(UBatchWrapper):
     # Patch functionality: install per-ubatch AFD context and control-plane
     # metadata while preserving native capture, replay, and execution behavior.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_ubatch_wrapper.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_ubatch_wrapper.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def __call__(self, *args, **kwargs):
         forward_context = get_forward_context()
         ubatch_slices = forward_context.ubatch_slices
@@ -148,8 +148,8 @@ class AFDUBatchWrapper(UBatchWrapper):
     # Patch reason: native per-ubatch contexts omit AFD transfer metadata.
     # Patch functionality: clone the parent AFD context into each native ubatch.
     # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_ubatch_wrapper.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_ubatch_wrapper.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def _make_ubatch_metadata(
         self,
         ubatch_slices,

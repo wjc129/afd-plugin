@@ -42,6 +42,7 @@ def _install_fake_modules(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     ascend_config_mod = types.ModuleType("vllm_ascend.ascend_config")
     ascend_config_mod.get_ascend_config = lambda: SimpleNamespace(
         enable_fused_mc2=0,
+        multistream_overlap_gate=False,
         eplb_config=SimpleNamespace(dynamic_eplb=False),
     )
     ascend_forward_context_mod = types.ModuleType("vllm_ascend.ascend_forward_context")
@@ -56,6 +57,10 @@ def _install_fake_modules(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     distributed = types.ModuleType("vllm_ascend.distributed")
     parallel_state_mod = types.ModuleType("vllm_ascend.distributed.parallel_state")
     parallel_state_mod.get_mc2_group = lambda: SimpleNamespace()
+    flash_common3_context_mod = types.ModuleType(
+        "vllm_ascend.flash_common3_context"
+    )
+    flash_common3_context_mod.get_flash_common3_context = lambda: None
     ops = types.ModuleType("vllm_ascend.ops")
     fused_moe_pkg = types.ModuleType("vllm_ascend.ops.fused_moe")
     experts_selector_mod = types.ModuleType(
@@ -153,6 +158,11 @@ def _install_fake_modules(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         sys.modules,
         "vllm_ascend.distributed.parallel_state",
         parallel_state_mod,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm_ascend.flash_common3_context",
+        flash_common3_context_mod,
     )
     monkeypatch.setitem(sys.modules, "vllm_ascend.ops", ops)
     monkeypatch.setitem(sys.modules, "vllm_ascend.ops.fused_moe", fused_moe_pkg)

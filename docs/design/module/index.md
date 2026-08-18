@@ -17,8 +17,8 @@ validation_paths:
   - "tests/unit/**"
   - "tests/e2e/**"
 upstream_refs:
-  - "vLLM 0.26.0"
-  - "vLLM-Ascend commit 80d8c194f and environment evidence recorded in the NPU guides"
+  - "vLLM 0.23.0"
+  - "vLLM-Ascend releases/v0.23.0 snapshot f042ad888; hardware validation pending"
 verified_platform_refs:
   - "CUDA: tests/e2e tests marked gpu; no canonical image is recorded"
   - "Ascend E2E environment recorded in the installation and NPU guides"

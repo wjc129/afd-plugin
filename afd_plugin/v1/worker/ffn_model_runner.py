@@ -363,8 +363,8 @@ class GPUFFNModelRunner(LoRAModelRunnerMixin):
     # Patch functionality: mirror the pinned native GPU resource cleanup and
     # then close AFD-owned profiler and connector resources.
     # Signature: matches GPUModelRunner.shutdown; no added parameters.
-    # Upstream: vLLM v0.26.0, vllm/v1/worker/gpu_model_runner.py
-    # Commit: 568afb3a13806beb53bb2e6bd518269357b237c0
+    # Upstream: vLLM v0.23.0, vllm/v1/worker/gpu_model_runner.py
+    # Commit: 0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
     def shutdown(self) -> None:
         # ### PATCH START: release native-equivalent and AFD-owned GPU state.
         stop_afd_gpu_profiler(self.prof)

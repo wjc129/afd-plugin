@@ -9,7 +9,7 @@ This module patches:
 4. ``vllm.v1.engine.core_client.DPAsyncMPClient.add_request_async``
 
 Why:
-    vLLM 0.26.0's native MoE DP path uses ``DPEngineCoreProc`` and DP wave
+    vLLM 0.23.0's native MoE DP path uses ``DPEngineCoreProc`` and DP wave
     notifications. AFD async-DP Attention ranks are connector-driven and must
     step independently while keeping the original DP/EP topology for expert
     placement and weight loading.
@@ -94,7 +94,7 @@ def run_engine_core(
 
         if data_parallel and vllm_config.kv_transfer_config is not None:
             vllm_config.kv_transfer_config.engine_id = (
-                f"{vllm_config.kv_transfer_config.engine_id}_dp{dp_rank}"
+                f"{vllm_config.kv_transfer_config.engine_id}_dp{local_dp_rank}"
             )
             engine_core_module.logger.debug(
                 "Setting kv_transfer_config.engine_id to %s",

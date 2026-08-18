@@ -58,7 +58,7 @@ def _cat_ubatch_outputs(
 ) -> AscendLastRankOutput:
     """Preserve the current Ascend model-output structure across ubatches.
 
-    Upstream source: vLLM v0.26.0 commit 568afb3a1,
+    Upstream source: vLLM v0.23.0 commit 0fc695fc6,
     ``gpu_ubatch_wrapper._cat_ubatch_outputs``. Ascend auxiliary hidden states
     use ``tuple[Tensor, list[Tensor]]`` rather than upstream's tuple of tensors,
     so this plugin-owned wrapper concatenates that concrete nested contract.
