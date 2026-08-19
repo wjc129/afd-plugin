@@ -131,6 +131,8 @@ def test_npu_attention_runner_uses_v023_ascend_interfaces():
     assert "AscendSFACPMetadataBuilder" in runner_source
     assert "AscendSFADCPMetadataBuilder" not in runner_source
     assert "copy_snapshot_to_gpu" not in runner_source
+    assert "is_profiling: bool = False" in runner_source
+    assert "is_profiling=is_profiling" in runner_source
 
 
 def test_vllm_version_support_is_exact_target():
