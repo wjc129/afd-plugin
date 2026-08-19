@@ -66,7 +66,6 @@ from vllm_ascend.worker.model_runner_v1 import (
     NPUModelRunner,
     PerLayerAttnMetadata,
 )
-from vllm_ascend.worker.utils import copy_snapshot_to_gpu
 
 from afd_plugin.compat.npu import (
     fail_if_unsupported_npu_afd_features,
@@ -1241,12 +1240,12 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                     self.query_pos.np,
                 )
                 self.query_start_loc.np[1 : num_reqs_padded + 1] = cum_num_tokens
-                copy_snapshot_to_gpu(self.query_start_loc)
+                self.query_start_loc.copy_to_gpu()
                 if self._has_gdn:
                     self.gdn_query_start_loc.np[1 : num_reqs_padded + 1] = (
                         cum_num_tokens
                     )
-                    copy_snapshot_to_gpu(self.gdn_query_start_loc)
+                    self.gdn_query_start_loc.copy_to_gpu()
 
                 if not profile_cpp:
                     num_reqs_padded = self._pad_query_start_loc_for_fia(

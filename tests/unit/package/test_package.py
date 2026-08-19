@@ -122,7 +122,7 @@ def test_connectors_export_attn_output_without_recv_alias():
     assert "AFDRecvOutput" not in namespace_source
 
 
-def test_npu_attention_runner_uses_v023_sfa_cp_builder():
+def test_npu_attention_runner_uses_v023_ascend_interfaces():
     root = Path(__file__).resolve().parents[3]
     runner_source = (
         root / "afd_plugin/v1/worker/npu/attention_model_runner.py"
@@ -130,6 +130,7 @@ def test_npu_attention_runner_uses_v023_sfa_cp_builder():
 
     assert "AscendSFACPMetadataBuilder" in runner_source
     assert "AscendSFADCPMetadataBuilder" not in runner_source
+    assert "copy_snapshot_to_gpu" not in runner_source
 
 
 def test_vllm_version_support_is_exact_target():
