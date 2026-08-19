@@ -122,6 +122,16 @@ def test_connectors_export_attn_output_without_recv_alias():
     assert "AFDRecvOutput" not in namespace_source
 
 
+def test_npu_attention_runner_uses_v023_sfa_cp_builder():
+    root = Path(__file__).resolve().parents[3]
+    runner_source = (
+        root / "afd_plugin/v1/worker/npu/attention_model_runner.py"
+    ).read_text()
+
+    assert "AscendSFACPMetadataBuilder" in runner_source
+    assert "AscendSFADCPMetadataBuilder" not in runner_source
+
+
 def test_vllm_version_support_is_exact_target():
     assert is_vllm_version_supported("0.23.0")
     assert not is_vllm_version_supported("0.25.0")

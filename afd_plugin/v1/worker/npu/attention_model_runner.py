@@ -41,7 +41,7 @@ from vllm_ascend.attention.context_parallel.dsa_cp import (
     AscendDSACPMetadataBuilder,
 )
 from vllm_ascend.attention.context_parallel.sfa_cp import (
-    AscendSFADCPMetadataBuilder,
+    AscendSFACPMetadataBuilder,
 )
 from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
 from vllm_ascend.attention.utils import (
@@ -729,7 +729,7 @@ class AFDNPUAttentionModelRunner(NPUModelRunner):
                 builder,
                 AscendDSAMetadataBuilder
                 | AscendDSACPMetadataBuilder
-                | AscendSFADCPMetadataBuilder,
+                | AscendSFACPMetadataBuilder,
             ):
                 attn_metadata_i = builder.build_for_cudagraph_capture(
                     common_attn_metadata,
