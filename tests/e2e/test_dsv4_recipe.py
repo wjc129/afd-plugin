@@ -108,6 +108,9 @@ def test_dsv4_role_scripts_offer_u1_graph_and_eager_u2():
         assert "activate_v023_vllm_cann_runtime.sh" in script
         assert "dsv4_source_ascend_custom_ops" in script
         assert "/mnt/workspace/code" not in script
+        assert "192.169.91." not in script
+        assert "GLOO_SOCKET_IFNAME:-eth0" not in script
+        assert "HCCL_SOCKET_IFNAME:-eth0" not in script
         assert 'EXECUTION_MODE="${EXECUTION_MODE:-eager}"' in script
         assert 'U_BATCHES="${U_BATCHES:-1}"' in script
         assert 'MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"' in script
@@ -185,19 +188,6 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
     )
     prefill = (HCCL_RECIPE_DIR / "pd_prefill.sh").read_text(encoding="utf-8")
     ffn = (HCCL_RECIPE_DIR / "afd_ffn.sh").read_text(encoding="utf-8")
-    mooncake_master = (HCCL_RECIPE_DIR / "start_mooncake_master.sh").read_text(
-        encoding="utf-8"
-    )
-    decode_service = (HCCL_RECIPE_DIR / "start_decode.sh").read_text(encoding="utf-8")
-    decode_u2 = (HCCL_RECIPE_DIR / "start_decode_u2.sh").read_text(
-        encoding="utf-8"
-    )
-    prefill_stack_u2 = (HCCL_RECIPE_DIR / "start_prefill_stack_u2.sh").read_text(
-        encoding="utf-8"
-    )
-    u2_validator = (HCCL_RECIPE_DIR / "validate_two_node_u2.sh").read_text(
-        encoding="utf-8"
-    )
     proxy = (REPO_ROOT / "tools/dsv4/pd_afd_proxy.py").read_text(encoding="utf-8")
 
     assert '"kv_connector":"MooncakeHybridConnector"' in shared_attention
@@ -220,22 +210,27 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
     assert '"kv_role":"kv_consumer"' in decode_attention
     assert "wait_for_mooncake_master" in decode_attention
 
-    assert "exec mooncake_master" in mooncake_master
-    assert "--default_kv_lease_ttl" in mooncake_master
-    assert "afd_ffn.sh" in decode_service
-    assert "pd_decode_attention.sh" in decode_service
-    assert "wait -n" in decode_service
-    assert 'export DECODE_U_BATCHES=2' in decode_u2
-    assert 'export EXECUTION_MODE=eager' in decode_u2
-    assert "start_mooncake_master.sh" in prefill_stack_u2
-    assert "pd_prefill.sh" in prefill_stack_u2
-    assert "start_proxy.sh" in prefill_stack_u2
-    assert "--batch-sizes 1 8 32" in u2_validator
-    assert "--require-batch-token-exact" in u2_validator
-
     assert "--kv-transfer-config" not in ffn
     assert '"do_remote_decode": True' in proxy
     assert 'decode_payload["kv_transfer_params"] = kv_transfer_params' in proxy
+
+
+def test_dsv4_server_launch_wrappers_stay_private():
+    private_names = (
+        "two_node_16npu.env.example",
+        "start_prefill_stack_u2.sh",
+        "start_decode_u2.sh",
+        "start_decode.sh",
+        "start_mooncake_master.sh",
+        "start_proxy.sh",
+        "check_two_node_service.sh",
+        "validate_two_node_u2.sh",
+        "collect_decode_u2_evidence.sh",
+    )
+
+    for name in private_names:
+        assert not (HCCL_RECIPE_DIR / name).exists()
+    assert "/script/" in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
 def test_dsv4_runtime_activation_discovers_server_local_paths():

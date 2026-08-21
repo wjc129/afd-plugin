@@ -216,6 +216,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Server-local deployment configuration and launch wrappers
+/script/
+
 # Ruff stuff:
 .ruff_cache/
 

@@ -382,10 +382,10 @@ find "${MODEL_PATH}" -maxdepth 1 -type f | sort | sed -n '1,40p'
 export GLOO_SOCKET_IFNAME=eth0
 export HCCL_SOCKET_IFNAME=eth0
 ip -o -4 addr show dev "${HCCL_SOCKET_IFNAME}"
-export HCCL_IF_IP=192.169.91.106
+export HCCL_IF_IP=YOUR_LOCAL_NPU_IP
 ```
 
-`192.169.91.106` 只是验证机示例，不能复制到其他节点。单机 A8F8 的 AFD
+`YOUR_LOCAL_NPU_IP` 必须替换为当前节点实际通信 IP。单机 A8F8 的 AFD
 rendezvous 可以使用 `127.0.0.1`。
 
 ### 8.2 端口和 NPU
@@ -419,7 +419,7 @@ cd "${CODE_ROOT}/afd-plugin"
 source tools/dsv4/activate_v023_vllm_cann_runtime.sh
 
 export MODEL_PATH=/mnt/workspace/models/DeepSeek-V4-Flash-w8a8-mtp
-export HCCL_IF_IP=192.169.91.106
+export HCCL_IF_IP=YOUR_LOCAL_NPU_IP
 export GLOO_SOCKET_IFNAME=eth0
 export HCCL_SOCKET_IFNAME=eth0
 export AFD_HOST=127.0.0.1
@@ -503,7 +503,7 @@ rg -n \
 ```bash
 cd "${CODE_ROOT}/afd-plugin"
 source tools/dsv4/activate_v023_vllm_cann_runtime.sh
-export HCCL_IF_IP=192.169.91.106
+export HCCL_IF_IP=YOUR_LOCAL_NPU_IP
 export GLOO_SOCKET_IFNAME=eth0
 export HCCL_SOCKET_IFNAME=eth0
 

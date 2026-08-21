@@ -61,11 +61,15 @@ Mooncake 的 `kv_port` 不能放在 16 卡 AscendDirectTransport 使用的
 
 ```bash
 cd /path/to/afd-plugin
-cp recipe/npu/P2pHcclAFDConnector/deepseek_v4/two_node_16npu.env.example \
-  /path/to/two_node_16npu.env
-vim /path/to/two_node_16npu.env
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
+mkdir -p script
+chmod 700 script
+vim script/two_node_16npu.env
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
 ```
+
+`script/` 已由仓库根目录的 `.gitignore` 忽略。IP、网卡、模型目录和服务器启动
+封装必须保存在这个服务器本地目录中，不提交到 GitHub。本章出现的
+`script/start_*.sh`、检查和证据采集脚本均指服务器本地脚本。
 
 必须修改 `PREFILL_IP`、`DECODE_IP`、`NETWORK_INTERFACE` 和 `MODEL_PATH`。
 配置文件使用 `export`，所以脚本启动的所有子进程会继承这些值。
@@ -112,8 +116,8 @@ export AFD_ASYNC_SCHEDULING=off
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_prefill_stack_u2.sh
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/start_prefill_stack_u2.sh
 ```
 
 它会依次启动 Mooncake Master、Prefill，等待节点 D 的 Decode 健康后再启动
@@ -121,8 +125,8 @@ Proxy。随后立即在节点 D 执行：
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/start_decode_u2.sh
 ```
 
 节点 D 会等待节点 P 的 Mooncake Master，因此两边不会因数秒级启动先后产生
@@ -134,8 +138,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_mooncake_master.sh \
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/start_mooncake_master.sh \
   2>&1 | tee /mnt/workspace/mooncake-master.log
 ```
 
@@ -150,8 +154,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_mooncake_master.sh \
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/start_decode_u2.sh
 ```
 
 该脚本强制 `eager/U2/无 MTP`，先启动 FFN daemon，再启动 Attention
@@ -166,7 +170,7 @@ consumer，避免初始化阶段两边都以阻塞方式等待对端。运行时
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/pd_prefill.sh \
   2>&1 | tee /mnt/workspace/prefill.log
 ```
@@ -180,8 +184,8 @@ AFD 插件。
 
 ```bash
 cd /path/to/afd-plugin
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_proxy.sh \
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/start_proxy.sh \
   2>&1 | tee /mnt/workspace/pd-afd-proxy.log
 ```
 
@@ -193,8 +197,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_proxy.sh \
 在节点 P 执行：
 
 ```bash
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/check_two_node_service.sh
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/check_two_node_service.sh
 
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
@@ -215,8 +219,8 @@ P2pHccl 收发次数匹配。
 先用未分离原生模型生成 golden token。服务健康后，在节点 P 运行：
 
 ```bash
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/validate_two_node_u2.sh \
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/validate_two_node_u2.sh \
   /mnt/workspace/validation/dsv4_v023_vllm_cann_native_baseline/golden_results.json
 ```
 
@@ -227,8 +231,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/validate_two_node_u2.sh \
 请求完成且 Decode 服务仍在运行时，在节点 D 执行：
 
 ```bash
-export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
-bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/collect_decode_u2_evidence.sh
+export DEPLOY_ENV_FILE="$PWD/script/two_node_16npu.env"
+bash script/collect_decode_u2_evidence.sh
 ```
 
 `/tmp/afd-pd-decode/u2_evidence.json` 必须为 `passed: true`。它同时检查服务

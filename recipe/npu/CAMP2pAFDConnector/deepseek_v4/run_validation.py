@@ -58,15 +58,26 @@ def _start_role(
     dbo_prefill_token_threshold: int,
     profile_dir: Path | None,
 ) -> tuple[subprocess.Popen[bytes], Any]:
-    log_handle = (output_dir / f"{role}.log").open("wb")
     env = os.environ.copy()
+    hccl_if_ip = env.get("HCCL_IF_IP")
+    network_interface = env.get("NETWORK_INTERFACE")
+    gloo_socket_ifname = env.get("GLOO_SOCKET_IFNAME") or network_interface
+    hccl_socket_ifname = env.get("HCCL_SOCKET_IFNAME") or network_interface
+    if not hccl_if_ip or not gloo_socket_ifname or not hccl_socket_ifname:
+        raise RuntimeError(
+            "Set HCCL_IF_IP and NETWORK_INTERFACE (or both socket interface "
+            "variables) in the server-local environment"
+        )
+    log_handle = (output_dir / f"{role}.log").open("wb")
     env.update(
         {
             "API_PORT": str(api_port),
             "AFD_PORT": str(afd_port),
             "AFD_HOST": "127.0.0.1",
             "AFD_CONNECTOR": connector,
-            "HCCL_IF_IP": env.get("HCCL_IF_IP", "192.169.91.106"),
+            "HCCL_IF_IP": hccl_if_ip,
+            "GLOO_SOCKET_IFNAME": gloo_socket_ifname,
+            "HCCL_SOCKET_IFNAME": hccl_socket_ifname,
             "PYTHONUNBUFFERED": "1",
             "EXECUTION_MODE": execution_mode,
             "U_BATCHES": str(u_batches),
