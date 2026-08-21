@@ -2,13 +2,15 @@
 set -eo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export DSV4_EXPECTED_VLLM_VERSION=0.26.0
 source "${ROOT_DIR}/tools/dsv4/activate_runtime.sh"
+unset DSV4_EXPECTED_VLLM_VERSION
 set -u
 
 EXPECTED_VLLM_COMMIT=568afb3a13806beb53bb2e6bd518269357b237c0
 EXPECTED_ASCEND_COMMIT=80d8c194f7584b17fe08065ea99a130916f6b0e7
-VLLM_ROOT=/mnt/workspace/code/vllm-afd-v0.26.0
-ASCEND_ROOT=/mnt/workspace/code/vllm-ascend-afd-80d8c194f
+VLLM_ROOT="$DSV4_VLLM_ROOT"
+ASCEND_ROOT="$DSV4_VLLM_ASCEND_ROOT"
 
 [[ "$(git -C "${VLLM_ROOT}" rev-parse HEAD)" == "${EXPECTED_VLLM_COMMIT}" ]]
 [[ "$(git -C "${ASCEND_ROOT}" rev-parse HEAD)" == "${EXPECTED_ASCEND_COMMIT}" ]]

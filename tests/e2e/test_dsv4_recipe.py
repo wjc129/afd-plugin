@@ -105,8 +105,9 @@ def test_dsv4_role_scripts_offer_u1_graph_and_eager_u2():
     recipe_dir = RUNNER_PATH.parent
     for role in ("attention", "ffn"):
         script = (recipe_dir / f"afd_{role}.sh").read_text(encoding="utf-8")
-        assert "/mnt/workspace/code/.venvs/afd-v023-vllm-cann" in script
-        assert "/mnt/workspace/code/vllm-ascend-rfc-vllm-cann" in script
+        assert "activate_v023_vllm_cann_runtime.sh" in script
+        assert "dsv4_source_ascend_custom_ops" in script
+        assert "/mnt/workspace/code" not in script
         assert 'EXECUTION_MODE="${EXECUTION_MODE:-eager}"' in script
         assert 'U_BATCHES="${U_BATCHES:-1}"' in script
         assert 'MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"' in script
@@ -235,6 +236,36 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
     assert "--kv-transfer-config" not in ffn
     assert '"do_remote_decode": True' in proxy
     assert 'decode_payload["kv_transfer_params"] = kv_transfer_params' in proxy
+
+
+def test_dsv4_runtime_activation_discovers_server_local_paths():
+    discovery = (REPO_ROOT / "tools/dsv4/runtime_discovery.sh").read_text(
+        encoding="utf-8"
+    )
+    activation = (REPO_ROOT / "tools/dsv4/activate_runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    v023_activation = (
+        REPO_ROOT / "tools/dsv4/activate_v023_vllm_cann_runtime.sh"
+    ).read_text(encoding="utf-8")
+    runtime_check = (REPO_ROOT / "tools/dsv4/check_runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    v023_runtime_check = (
+        REPO_ROOT / "tools/dsv4/check_v023_vllm_cann_runtime.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "dsv4_resolve_runtime_python" in discovery
+    assert "dsv4_resolve_cann_root" in discovery
+    assert "dsv4_resolve_module_root" in discovery
+    assert "Multiple CANN installations were discovered" in discovery
+    assert "/mnt/workspace/code" not in activation
+    assert "/opt/buildtools" not in activation
+    assert "DSV4_EXPECTED_VLLM_VERSION=0.23.0" in v023_activation
+    assert "/mnt/workspace/code" not in runtime_check
+    assert "/mnt/workspace/code" not in v023_runtime_check
+    assert 'VLLM_ROOT="$DSV4_VLLM_ROOT"' in v023_runtime_check
+    assert 'ASCEND_ROOT="$DSV4_VLLM_ASCEND_ROOT"' in v023_runtime_check
 
 
 def test_dsv4_v023_native_baseline_has_explicit_mtp_switch():

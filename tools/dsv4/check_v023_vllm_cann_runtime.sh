@@ -7,8 +7,10 @@ set -u
 
 EXPECTED_VLLM_COMMIT=0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665
 EXPECTED_ASCEND_COMMIT=3da28f9414583d2d0b672a8f06d1fae142404bda
-VLLM_ROOT=/mnt/workspace/code/vllm-release-v0.23.0
-ASCEND_ROOT=/mnt/workspace/code/vllm-ascend-rfc-vllm-cann
+VLLM_ROOT="$DSV4_VLLM_ROOT"
+ASCEND_ROOT="$DSV4_VLLM_ASCEND_ROOT"
+MODEL_PATH="${MODEL_PATH:?Set MODEL_PATH to the DeepSeek V4 model directory}"
+export MODEL_PATH
 
 [[ "$(git -C "${VLLM_ROOT}" rev-parse HEAD)" == "${EXPECTED_VLLM_COMMIT}" ]]
 [[ "$(git -C "${ASCEND_ROOT}" rev-parse HEAD)" == "${EXPECTED_ASCEND_COMMIT}" ]]
@@ -40,7 +42,7 @@ ensure_afd_ascend_ops_loaded()
 # normalization cannot silently turn an AFD U2 launch back into U1.
 register_afd()
 engine_args = EngineArgs(
-    model="/mnt/workspace/models/DeepSeek-V4-Flash-w8a8-mtp",
+    model=os.environ["MODEL_PATH"],
     tokenizer_mode="deepseek_v4",
     quantization="ascend",
     enforce_eager=True,

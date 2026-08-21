@@ -5,8 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 if [[ -n "${DEPLOY_ENV_FILE:-}" ]]; then
   source "$DEPLOY_ENV_FILE"
 fi
-export DSV4_VLLM_VENV="${DSV4_RUNTIME_VENV:-/mnt/workspace/code/.venvs/afd-v023-vllm-cann}"
-source "${ROOT_DIR}/tools/dsv4/activate_runtime.sh"
+source "${ROOT_DIR}/tools/dsv4/activate_v023_vllm_cann_runtime.sh"
 
 LOG_DIR="${DECODE_LOG_DIR:-/tmp/afd-pd-decode}"
 OUTPUT="${1:-${LOG_DIR}/u2_evidence.json}"

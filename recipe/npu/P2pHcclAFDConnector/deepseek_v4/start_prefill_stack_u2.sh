@@ -70,7 +70,11 @@ bash "${ROOT_DIR}/recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_mooncake_mast
 master_pid=$!
 
 source "${ROOT_DIR}/recipe/npu/P2pHcclAFDConnector/deepseek_v4/mooncake_common.sh"
-wait_for_mooncake_master
+if ! wait_for_mooncake_master "$master_pid"; then
+  echo "Mooncake Master startup failed; log tail:" >&2
+  tail -n 80 "${LOG_DIR}/mooncake-master.log" >&2 || true
+  exit 1
+fi
 if ! kill -0 "$master_pid" 2>/dev/null; then
   echo "Mooncake Master exited; inspect ${LOG_DIR}/mooncake-master.log" >&2
   wait "$master_pid"

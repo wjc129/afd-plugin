@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -429,23 +430,35 @@ def _runtime_manifest(
     mtp_num_speculative_tokens: int = 1,
     topology: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    venv_path = os.environ.get(
-        "DSV4_RUNTIME_VENV",
-        "/mnt/workspace/code/.venvs/afd-v023-vllm-cann",
-    )
-    vllm_root = os.environ.get(
-        "DSV4_VLLM_ROOT",
-        "/mnt/workspace/code/vllm-release-v0.23.0",
-    )
-    vllm_ascend_root = os.environ.get(
-        "DSV4_VLLM_ASCEND_ROOT",
-        "/mnt/workspace/code/vllm-ascend-rfc-vllm-cann",
+    def module_root(module_name: str) -> str | None:
+        spec = importlib.util.find_spec(module_name)
+        if spec is None:
+            return None
+        if spec.submodule_search_locations:
+            package_dir = Path(next(iter(spec.submodule_search_locations)))
+        elif spec.origin:
+            package_dir = Path(spec.origin).parent
+        else:
+            return None
+        return str(package_dir.resolve().parent)
+
+    venv_path = os.environ.get("DSV4_RUNTIME_VENV", sys.prefix)
+    vllm_root = os.environ.get("DSV4_VLLM_ROOT") or module_root("vllm")
+    vllm_ascend_root = os.environ.get("DSV4_VLLM_ASCEND_ROOT") or module_root(
+        "vllm_ascend"
     )
 
-    def git_head(path: str) -> str:
-        return subprocess.check_output(
-            ["git", "-C", path, "rev-parse", "HEAD"], text=True
-        ).strip()
+    def git_head(path: str | None) -> str | None:
+        if path is None:
+            return None
+        try:
+            return subprocess.check_output(
+                ["git", "-C", path, "rev-parse", "HEAD"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
 
     afd_status = subprocess.check_output(
         [
@@ -464,9 +477,9 @@ def _runtime_manifest(
     manifest = {
         "python": sys.version,
         "plugins": "ascend,ascend_model,ascend_model_loader,ascend_kv_connector,afd",
-        "cann": "/mnt/workspace/code/.ascend/cann-9.0.1/cann-9.0.1",
+        "cann": os.environ.get("DSV4_CANN_ROOT"),
         "venv": venv_path,
-        "model": "/mnt/workspace/models/DeepSeek-V4-Flash-w8a8-mtp",
+        "model": os.environ.get("MODEL_PATH"),
         "connector": connector,
         "execution_mode": execution_mode,
         "u_batches": u_batches,

@@ -6,8 +6,7 @@ if [[ -n "${DEPLOY_ENV_FILE:-}" ]]; then
   source "$DEPLOY_ENV_FILE"
 fi
 
-export DSV4_VLLM_VENV="${DSV4_RUNTIME_VENV:-/mnt/workspace/code/.venvs/afd-v023-vllm-cann}"
-source "${ROOT_DIR}/tools/dsv4/activate_runtime.sh"
+source "${ROOT_DIR}/tools/dsv4/activate_v023_vllm_cann_runtime.sh"
 source "${ROOT_DIR}/recipe/npu/P2pHcclAFDConnector/deepseek_v4/mooncake_common.sh"
 
 prepare_mooncake_client_config

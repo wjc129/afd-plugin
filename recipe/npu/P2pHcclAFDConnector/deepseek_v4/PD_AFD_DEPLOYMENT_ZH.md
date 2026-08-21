@@ -60,15 +60,39 @@ Mooncake 的 `kv_port` 不能放在 16 卡 AscendDirectTransport 使用的
 在两台机器分别执行：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
+cd /path/to/afd-plugin
 cp recipe/npu/P2pHcclAFDConnector/deepseek_v4/two_node_16npu.env.example \
-  /mnt/workspace/two_node_16npu.env
-vim /mnt/workspace/two_node_16npu.env
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+  /path/to/two_node_16npu.env
+vim /path/to/two_node_16npu.env
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 ```
 
 必须修改 `PREFILL_IP`、`DECODE_IP`、`NETWORK_INTERFACE` 和 `MODEL_PATH`。
 配置文件使用 `export`，所以脚本启动的所有子进程会继承这些值。
+不要把其他服务器上的 CANN、venv、vLLM 源码绝对路径复制进配置。脚本按以下
+顺序自动发现运行时：显式有效配置、当前激活的 vLLM 0.23.0 Python 环境、仓库
+相邻的虚拟环境；`vllm` 和 `vllm_ascend` 根目录从已安装模块解析；CANN 从已经
+激活的 Ascend 环境、系统安装目录和仓库相邻目录中的 `set_env.sh` 解析。
+
+启动服务前可以单独检查自动发现结果：
+
+```bash
+source tools/dsv4/activate_v023_vllm_cann_runtime.sh
+printf 'python=%s\ncann=%s\nvllm=%s\nvllm_ascend=%s\n' \
+  "$DSV4_RUNTIME_PYTHON" "$DSV4_CANN_ROOT" \
+  "$DSV4_VLLM_ROOT" "$DSV4_VLLM_ASCEND_ROOT"
+```
+
+如果虚拟环境或 CANN 位于任意自定义挂载目录，不需要填写具体版本目录，只需
+给出包含它们的搜索根目录：
+
+```bash
+export DSV4_RUNTIME_SEARCH_ROOTS=/data/runtime:/opt/runtime
+export DSV4_CANN_SEARCH_ROOTS=/data/ascend:/opt/ascend
+```
+
+发现多个 CANN 安装时脚本会列出全部候选并停止，避免擅自选择错误版本；此时
+才需要把 `DSV4_CANN_ROOT` 指向候选列表中本次实验要使用的目录。
 U2 配置必须保留：
 
 ```bash
@@ -87,8 +111,8 @@ export AFD_ASYNC_SCHEDULING=off
 推荐使用两个托管入口。先在节点 P 启动组合脚本：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_prefill_stack_u2.sh
 ```
 
@@ -96,8 +120,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_prefill_stack_u2.sh
 Proxy。随后立即在节点 D 执行：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
 ```
 
@@ -109,8 +133,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
 第一个终端：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_mooncake_master.sh \
   2>&1 | tee /mnt/workspace/mooncake-master.log
 ```
@@ -125,8 +149,8 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_mooncake_master.sh \
 第二个终端在节点 D 执行：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_decode_u2.sh
 ```
 
@@ -141,8 +165,8 @@ consumer，避免初始化阶段两边都以阻塞方式等待对端。运行时
 第三个终端在节点 P 执行：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/pd_prefill.sh \
   2>&1 | tee /mnt/workspace/prefill.log
 ```
@@ -155,8 +179,8 @@ AFD 插件。
 所有计算服务健康后启动：
 
 ```bash
-cd /mnt/workspace/code/afd-plugin
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+cd /path/to/afd-plugin
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_proxy.sh \
   2>&1 | tee /mnt/workspace/pd-afd-proxy.log
 ```
@@ -169,7 +193,7 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/start_proxy.sh \
 在节点 P 执行：
 
 ```bash
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/check_two_node_service.sh
 
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -191,7 +215,7 @@ P2pHccl 收发次数匹配。
 先用未分离原生模型生成 golden token。服务健康后，在节点 P 运行：
 
 ```bash
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/validate_two_node_u2.sh \
   /mnt/workspace/validation/dsv4_v023_vllm_cann_native_baseline/golden_results.json
 ```
@@ -203,7 +227,7 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/validate_two_node_u2.sh \
 请求完成且 Decode 服务仍在运行时，在节点 D 执行：
 
 ```bash
-export DEPLOY_ENV_FILE=/mnt/workspace/two_node_16npu.env
+export DEPLOY_ENV_FILE=/path/to/two_node_16npu.env
 bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/collect_decode_u2_evidence.sh
 ```
 

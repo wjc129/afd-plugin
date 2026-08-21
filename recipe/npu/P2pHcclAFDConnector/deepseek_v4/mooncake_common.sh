@@ -47,7 +47,9 @@ configure_mooncake_library_path() {
 
 wait_for_mooncake_master() {
   require_mooncake_master_address
-  python - "$MOONCAKE_MASTER_IP" "$MOONCAKE_MASTER_PORT" "$MOONCAKE_WAIT_TIMEOUT" <<'PY'
+  local master_pid="${1:-}"
+  python - "$MOONCAKE_MASTER_IP" "$MOONCAKE_MASTER_PORT" "$MOONCAKE_WAIT_TIMEOUT" "$master_pid" <<'PY'
+import os
 import socket
 import sys
 import time
@@ -55,10 +57,18 @@ import time
 host = sys.argv[1]
 port = int(sys.argv[2])
 timeout = int(sys.argv[3])
+master_pid = int(sys.argv[4]) if sys.argv[4] else None
 deadline = time.monotonic() + timeout
 last_error = "not attempted"
 
 while time.monotonic() < deadline:
+    if master_pid is not None:
+        try:
+            os.kill(master_pid, 0)
+        except ProcessLookupError:
+            raise SystemExit(
+                f"Mooncake Master process {master_pid} exited before {host}:{port} became reachable"
+            )
     try:
         with socket.create_connection((host, port), timeout=2):
             print(f"Mooncake Master is reachable at {host}:{port}")

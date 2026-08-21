@@ -5,8 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 if [[ -n "${DEPLOY_ENV_FILE:-}" ]]; then
   source "$DEPLOY_ENV_FILE"
 fi
-export DSV4_VLLM_VENV="${DSV4_RUNTIME_VENV:-/mnt/workspace/code/.venvs/afd-v023-vllm-cann}"
-source "${ROOT_DIR}/tools/dsv4/activate_runtime.sh"
+source "${ROOT_DIR}/tools/dsv4/activate_v023_vllm_cann_runtime.sh"
 
 PREFILL_URL="${PREFILL_URL:-http://${PREFILL_IP:?Set PREFILL_IP}:${PREFILL_API_PORT:-8100}}"
 DECODE_URL="${DECODE_URL:-http://${DECODE_IP:?Set DECODE_IP}:${DECODE_API_PORT:-8200}}"
