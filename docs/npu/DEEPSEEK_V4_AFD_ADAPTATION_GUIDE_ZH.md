@@ -1531,16 +1531,25 @@ Attention pre -> remote MoE -> Attention post
 
 AF standalone 稳定后，再接 Mooncake：
 
+当前已提供 eager/U1、无 MTP 的首个组合基线，启动和回退步骤见
+[`PD_AFD_DEPLOYMENT_ZH.md`](../../recipe/npu/P2pHcclAFDConnector/deepseek_v4/PD_AFD_DEPLOYMENT_ZH.md)。
+该基线仍需在远程两节点 32-NPU 拓扑完成端到端硬件验收后，才能继续开放 Graph、
+U2 或 MTP。
+
 ```text
 A3-1:
-    Prefill NPU0-7，DP2 x TP4
+    Mooncake Master
+    Prefill NPU0-15，DP4 x TP4
 
 A3-2:
     Decode Attention NPU0-7，DP8 x TP1
     Decode FFN       NPU8-15，DP8 x TP1
 ```
 
-PD 只接在 Prefill 与 Decode Attention 之间；AFD 只接在 Decode Attention 与Decode FFN 之间。排障时要能用 `DECODE_STANDALONE_AF=1` 关闭 Mooncake，只保留 AF。
+PD 只接在 Prefill 与 Decode Attention 之间；AFD 只接在 Decode Attention 与
+Decode FFN 之间。`MultiConnector` 用 `MooncakeHybridConnector` 完成直接 KV
+传输，并用 Mooncake Store 管理可复用 KV。排障时可用 `PD_KV_MODE=direct`
+关闭 Store，或用 `DECODE_STANDALONE_AF=1` 关闭整个 PD 路径，只保留 AF。
 
 ## 10. 测试设计
 

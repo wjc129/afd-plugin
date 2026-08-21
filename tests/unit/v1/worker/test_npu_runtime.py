@@ -2984,6 +2984,71 @@ def _dsv4_config(**kwargs):
     return config
 
 
+def _dsv4_pd_config(
+    *,
+    role="attention",
+    kv_connector="MooncakeHybridConnector",
+    kv_role="kv_consumer",
+    prefill_dp_size=2,
+    prefill_tp_size=4,
+    decode_dp_size=1,
+    decode_tp_size=1,
+    **kwargs,
+):
+    kwargs.setdefault("cudagraph_mode", "FULL_DECODE_ONLY")
+    config = _dsv4_config(
+        role=role,
+        data_parallel_size=decode_dp_size,
+        **kwargs,
+    )
+    config.additional_config["afd"].update(
+        connector="P2pHcclAFDConnector",
+        num_attention_ranks=decode_dp_size,
+        num_ffn_ranks=decode_dp_size,
+    )
+    config.kv_transfer_config = SimpleNamespace(
+        kv_connector=kv_connector,
+        kv_role=kv_role,
+        kv_connector_extra_config={
+            "prefill": {
+                "dp_size": prefill_dp_size,
+                "tp_size": prefill_tp_size,
+            },
+            "decode": {
+                "dp_size": decode_dp_size,
+                "tp_size": decode_tp_size,
+            },
+        },
+    )
+    return config
+
+
+def _dsv4_managed_pd_config(**kwargs):
+    config = _dsv4_pd_config(**kwargs)
+    direct_extra_config = config.kv_transfer_config.kv_connector_extra_config
+    config.kv_transfer_config.kv_connector = "MultiConnector"
+    config.kv_transfer_config.kv_connector_extra_config = {
+        "connectors": [
+            {
+                "kv_connector": "MooncakeHybridConnector",
+                "kv_role": "kv_consumer",
+                "kv_port": "36200",
+                "engine_id": "1",
+                "kv_connector_extra_config": direct_extra_config,
+            },
+            {
+                "kv_connector": "AscendStoreConnector",
+                "kv_role": "kv_consumer",
+                "kv_connector_extra_config": {
+                    "lookup_rpc_port": "0",
+                    "backend": "mooncake",
+                },
+            },
+        ],
+    }
+    return config
+
+
 def _mtp_speculative_config(**overrides):
     values = {
         "method": "mtp",
@@ -3132,14 +3197,142 @@ def test_dsv4_feature_validation_rejects_hccl_p2p_graph_a2f1():
             lambda config: setattr(config, "speculative_config", object()),
             "MTP supports only P2pHcclAFDConnector",
         ),
-        (
-            lambda config: setattr(config, "kv_transfer_config", object()),
-            "does not support PD",
-        ),
     ],
 )
 def test_dsv4_feature_validation_rejects_unvalidated_modes(mutation, message):
     config = _dsv4_config()
+    mutation(config)
+
+    with pytest.raises(RuntimeError, match=message):
+        fail_if_unsupported_npu_afd_features(config)
+
+
+def test_dsv4_feature_validation_accepts_mooncake_pd_decode_attention():
+    fail_if_unsupported_npu_afd_features(_dsv4_pd_config(decode_dp_size=8))
+
+
+def test_dsv4_feature_validation_accepts_mooncake_managed_pd_decode_attention():
+    fail_if_unsupported_npu_afd_features(
+        _dsv4_managed_pd_config(
+            prefill_dp_size=4,
+            prefill_tp_size=4,
+            decode_dp_size=8,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda config: config.additional_config["afd"].update(role="ffn"),
+            "only to Decode Attention",
+        ),
+        (
+            lambda config: config.additional_config["afd"].update(
+                connector="CAMP2pAFDConnector"
+            ),
+            "requires P2pHcclAFDConnector",
+        ),
+        (
+            lambda config: setattr(
+                config.kv_transfer_config,
+                "kv_connector",
+                "P2pHcclConnector",
+            ),
+            "supports MooncakeHybridConnector directly or MultiConnector",
+        ),
+        (
+            lambda config: setattr(
+                config.kv_transfer_config,
+                "kv_role",
+                "kv_producer",
+            ),
+            "requires kv_role='kv_consumer'",
+        ),
+        (
+            lambda config: setattr(config.model_config, "enforce_eager", False),
+            "only eager execution",
+        ),
+        (
+            lambda config: (
+                setattr(config.parallel_config, "use_ubatching", True),
+                setattr(config.parallel_config, "num_ubatches", 2),
+            ),
+            "only U1",
+        ),
+        (
+            lambda config: setattr(
+                config,
+                "speculative_config",
+                _mtp_speculative_config(),
+            ),
+            "does not support MTP",
+        ),
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config[
+                "decode"
+            ].update(dp_size=4),
+            "must match AFD Decode Attention DP8/TP1",
+        ),
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config[
+                "decode"
+            ].update(tp_size=2),
+            "must match AFD Decode Attention DP8/TP1",
+        ),
+        (
+            lambda config: setattr(
+                config.kv_transfer_config,
+                "kv_connector_extra_config",
+                {},
+            ),
+            "requires prefill/decode topology objects",
+        ),
+    ],
+)
+def test_dsv4_feature_validation_rejects_unvalidated_pd_modes(mutation, message):
+    config = _dsv4_pd_config(decode_dp_size=8)
+    mutation(config)
+
+    with pytest.raises(RuntimeError, match=message):
+        fail_if_unsupported_npu_afd_features(config)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config.update(
+                connectors=[]
+            ),
+            "requires exactly two MultiConnector children",
+        ),
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config[
+                "connectors"
+            ][0].update(kv_connector="MooncakeConnectorV1"),
+            "requires MooncakeHybridConnector as the first child",
+        ),
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config[
+                "connectors"
+            ][1].update(kv_role="kv_producer"),
+            "requires AscendStoreConnector as the second child",
+        ),
+        (
+            lambda config: config.kv_transfer_config.kv_connector_extra_config[
+                "connectors"
+            ][1]["kv_connector_extra_config"].update(backend="memcache"),
+            "requires AscendStoreConnector backend='mooncake'",
+        ),
+    ],
+)
+def test_dsv4_feature_validation_rejects_invalid_mooncake_store_wiring(
+    mutation,
+    message,
+):
+    config = _dsv4_managed_pd_config(decode_dp_size=8)
     mutation(config)
 
     with pytest.raises(RuntimeError, match=message):

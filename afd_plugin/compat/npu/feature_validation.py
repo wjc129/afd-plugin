@@ -13,8 +13,16 @@ from afd_plugin.config import (
     parse_afd_config,
 )
 
+MOONCAKE_HYBRID_CONNECTOR = "MooncakeHybridConnector"
+MOONCAKE_MULTI_CONNECTOR = "MultiConnector"
+ASCEND_STORE_CONNECTOR = "AscendStoreConnector"
+MOONCAKE_STORE_BACKEND = "mooncake"
+PD_AFD_CONNECTOR = "P2pHcclAFDConnector"
+PD_DECODE_TENSOR_PARALLEL_SIZE = 1
+PD_NUM_UBATCHES = 1
+
 if TYPE_CHECKING:
-    from vllm.config import VllmConfig
+    from vllm.config import KVTransferConfig, VllmConfig
 
     from afd_plugin.connectors.base import ConnectorExtraInfo
 
@@ -226,8 +234,143 @@ def _fail_if_unsupported_deepseek_v4_features(
             raise RuntimeError(
                 "DeepSeek-V4 AFD DBO/ubatching currently supports only eager execution"
             )
-    if getattr(vllm_config, "kv_transfer_config", None) is not None:
-        raise RuntimeError("DeepSeek-V4 AFD standalone baseline does not support PD")
+    if vllm_config.kv_transfer_config is not None:
+        _fail_if_unsupported_deepseek_v4_pd_features(vllm_config, afd_config)
+
+
+def _fail_if_unsupported_deepseek_v4_pd_features(
+    vllm_config: VllmConfig,
+    afd_config: AFDConfig,
+) -> None:
+    """Validate the first supported DeepSeek-V4 PD x AFD deployment.
+
+    Prefill remains a native vLLM-Ascend service. The AFD service is the
+    Decode side, where only Attention owns KV cache and consumes Mooncake data;
+    Decode FFN remains a connector-driven daemon without KV state.
+    """
+
+    kv_transfer_config = vllm_config.kv_transfer_config
+    assert kv_transfer_config is not None
+    parallel_config = vllm_config.parallel_config
+
+    if afd_config.role != "attention":
+        raise RuntimeError(
+            "DeepSeek-V4 PD x AFD attaches KV transfer only to Decode Attention; "
+            "FFN must start without --kv-transfer-config"
+        )
+    if afd_config.connector != PD_AFD_CONNECTOR:
+        raise RuntimeError("DeepSeek-V4 PD x AFD baseline requires P2pHcclAFDConnector")
+    if kv_transfer_config.kv_connector not in (
+        MOONCAKE_HYBRID_CONNECTOR,
+        MOONCAKE_MULTI_CONNECTOR,
+    ):
+        raise RuntimeError(
+            "DeepSeek-V4 PD x AFD supports MooncakeHybridConnector directly "
+            "or MultiConnector with Mooncake-managed KV Pool"
+        )
+    if kv_transfer_config.kv_role != "kv_consumer":
+        raise RuntimeError(
+            "DeepSeek-V4 AFD is the Decode side of PD and requires "
+            "kv_role='kv_consumer'"
+        )
+    if not vllm_config.model_config.enforce_eager:
+        raise RuntimeError(
+            "DeepSeek-V4 PD x AFD baseline supports only eager execution"
+        )
+    if (
+        parallel_config.use_ubatching
+        or int(parallel_config.num_ubatches) != PD_NUM_UBATCHES
+    ):
+        raise RuntimeError("DeepSeek-V4 PD x AFD baseline supports only U1")
+    if vllm_config.speculative_config is not None:
+        raise RuntimeError("DeepSeek-V4 PD x AFD baseline does not support MTP")
+
+    extra_config = _deepseek_v4_pd_mooncake_extra_config(kv_transfer_config)
+    prefill_topology = extra_config.get("prefill")
+    decode_topology = extra_config.get("decode")
+    if not isinstance(prefill_topology, dict) or not isinstance(decode_topology, dict):
+        raise RuntimeError(
+            "MooncakeHybridConnector requires prefill/decode topology objects"
+        )
+
+    prefill_dp_size = int(prefill_topology.get("dp_size", 0))
+    prefill_tp_size = int(prefill_topology.get("tp_size", 0))
+    if prefill_dp_size < 1 or prefill_tp_size < 1:
+        raise RuntimeError(
+            "MooncakeHybridConnector prefill dp_size/tp_size must be positive"
+        )
+
+    decode_dp_size = int(decode_topology.get("dp_size", 0))
+    decode_tp_size = int(decode_topology.get("tp_size", 0))
+    expected_decode_dp_size = int(parallel_config.data_parallel_size)
+    if (
+        decode_dp_size != expected_decode_dp_size
+        or decode_tp_size != PD_DECODE_TENSOR_PARALLEL_SIZE
+    ):
+        raise RuntimeError(
+            "MooncakeHybridConnector decode topology must match AFD Decode "
+            f"Attention DP{expected_decode_dp_size}/"
+            f"TP{PD_DECODE_TENSOR_PARALLEL_SIZE}; "
+            f"got DP{decode_dp_size}/TP{decode_tp_size}"
+        )
+
+
+def _deepseek_v4_pd_mooncake_extra_config(
+    kv_transfer_config: KVTransferConfig,
+) -> dict[str, object]:
+    """Return the direct-transfer topology after validating KV Pool wiring."""
+
+    extra_config = kv_transfer_config.kv_connector_extra_config
+    if not isinstance(extra_config, dict):
+        raise RuntimeError("DeepSeek-V4 PD x AFD requires kv_connector_extra_config")
+
+    if kv_transfer_config.kv_connector == MOONCAKE_HYBRID_CONNECTOR:
+        return extra_config
+
+    connectors = extra_config.get("connectors")
+    if not isinstance(connectors, list) or len(connectors) != 2:
+        raise RuntimeError(
+            "DeepSeek-V4 Mooncake-managed PD requires exactly two MultiConnector "
+            "children"
+        )
+
+    transfer_connector, store_connector = connectors
+    if not isinstance(transfer_connector, dict) or not isinstance(
+        store_connector, dict
+    ):
+        raise RuntimeError(
+            "DeepSeek-V4 Mooncake-managed PD connector entries must be objects"
+        )
+    if (
+        transfer_connector.get("kv_connector") != MOONCAKE_HYBRID_CONNECTOR
+        or transfer_connector.get("kv_role") != kv_transfer_config.kv_role
+    ):
+        raise RuntimeError(
+            "DeepSeek-V4 Mooncake-managed PD requires MooncakeHybridConnector "
+            "as the first child with the same kv_role"
+        )
+    if (
+        store_connector.get("kv_connector") != ASCEND_STORE_CONNECTOR
+        or store_connector.get("kv_role") != kv_transfer_config.kv_role
+    ):
+        raise RuntimeError(
+            "DeepSeek-V4 Mooncake-managed PD requires AscendStoreConnector "
+            "as the second child with the same kv_role"
+        )
+
+    store_extra_config = store_connector.get("kv_connector_extra_config")
+    if not isinstance(store_extra_config, dict) or (
+        store_extra_config.get("backend") != MOONCAKE_STORE_BACKEND
+    ):
+        raise RuntimeError(
+            "DeepSeek-V4 Mooncake-managed PD requires "
+            "AscendStoreConnector backend='mooncake'"
+        )
+
+    transfer_extra_config = transfer_connector.get("kv_connector_extra_config")
+    if not isinstance(transfer_extra_config, dict):
+        raise RuntimeError("MooncakeHybridConnector requires kv_connector_extra_config")
+    return transfer_extra_config
 
 
 def _fail_if_unsupported_npu_async_moe_ubatching_features(

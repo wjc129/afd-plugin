@@ -29,6 +29,13 @@ CUDAGRAPH_CAPTURE_SIZES="${CUDAGRAPH_CAPTURE_SIZES:-1 2 4 8}"
 ENABLE_MTP="${ENABLE_MTP:-0}"
 MTP_NUM_SPECULATIVE_TOKENS="${MTP_NUM_SPECULATIVE_TOKENS:-1}"
 AFD_ASYNC_SCHEDULING="${AFD_ASYNC_SCHEDULING:-auto}"
+ENABLE_PD="${ENABLE_PD:-0}"
+PD_KV_PORT="${PD_DECODE_KV_PORT:-${PD_KV_PORT:-36200}}"
+PD_ENGINE_ID="${PD_ENGINE_ID:-1}"
+PD_PREFILL_DP_SIZE="${PD_PREFILL_DP_SIZE:-2}"
+PD_PREFILL_TP_SIZE="${PD_PREFILL_TP_SIZE:-4}"
+PD_DECODE_DP_SIZE="${PD_DECODE_DP_SIZE:-${ATTENTION_RANKS}}"
+PD_DECODE_TP_SIZE="${PD_DECODE_TP_SIZE:-1}"
 
 export ASCEND_RT_VISIBLE_DEVICES="${ATTENTION_DEVICES:-${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}}"
 export HCCL_IF_IP="${HCCL_IF_IP:-192.169.91.106}"
@@ -45,6 +52,11 @@ export SOC_VERSION=ascend910_9362
 export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-18000}"
 export VLLM_PLUGINS=ascend,ascend_model,ascend_model_loader,ascend_kv_connector,afd
 unset VLLM_ASCEND_ENABLE_FLASHCOMM1
+
+if [[ "$ENABLE_PD" == "1" && "$AFD_CONNECTOR" == "P2pHcclAFDConnector" ]]; then
+  source "${ROOT_DIR}/recipe/npu/P2pHcclAFDConnector/deepseek_v4/mooncake_common.sh"
+  configure_mooncake_library_path
+fi
 
 case "$AFD_CONNECTOR" in
   CAMP2pAFDConnector)
@@ -162,6 +174,45 @@ case "$AFD_ASYNC_SCHEDULING" in
     ;;
 esac
 
+case "$ENABLE_PD" in
+  0)
+    PD_ARGS=()
+    ;;
+  1)
+    if [[ "$AFD_CONNECTOR" != "P2pHcclAFDConnector" ]]; then
+      echo "DeepSeek-V4 PD x AFD baseline requires P2pHcclAFDConnector" >&2
+      exit 2
+    fi
+    if [[ "$EXECUTION_MODE" != "eager" || "$U_BATCHES" != "1" ]]; then
+      echo "DeepSeek-V4 PD x AFD baseline requires eager/U1" >&2
+      exit 2
+    fi
+    if [[ "$ENABLE_MTP" != "0" ]]; then
+      echo "DeepSeek-V4 PD x AFD baseline does not support MTP" >&2
+      exit 2
+    fi
+    if [[ "$PD_DECODE_DP_SIZE" != "$ATTENTION_RANKS" ]]; then
+      echo "PD_DECODE_DP_SIZE must match ATTENTION_RANKS" >&2
+      exit 2
+    fi
+    if [[ "$PD_DECODE_TP_SIZE" != "1" ]]; then
+      echo "DeepSeek-V4 AFD Decode Attention requires PD_DECODE_TP_SIZE=1" >&2
+      exit 2
+    fi
+    PD_KV_TRANSFER_CONFIG="${PD_KV_TRANSFER_CONFIG:-$(printf '{"kv_connector":"MooncakeHybridConnector","kv_role":"kv_consumer","kv_port":"%s","engine_id":"%s","kv_connector_extra_config":{"prefill":{"dp_size":%s,"tp_size":%s},"decode":{"dp_size":%s,"tp_size":%s}}}' "$PD_KV_PORT" "$PD_ENGINE_ID" "$PD_PREFILL_DP_SIZE" "$PD_PREFILL_TP_SIZE" "$PD_DECODE_DP_SIZE" "$PD_DECODE_TP_SIZE")}"
+    PD_ARGS=(
+      --no-disable-hybrid-kv-cache-manager
+      --enable-request-id-headers
+      --kv-transfer-config
+      "$PD_KV_TRANSFER_CONFIG"
+    )
+    ;;
+  *)
+    echo "ENABLE_PD must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
+
 exec vllm serve "$MODEL_PATH" \
   --host "$API_HOST" \
   --port "$API_PORT" \
@@ -181,6 +232,7 @@ exec vllm serve "$MODEL_PATH" \
   --quantization ascend \
   --block-size 128 \
   --additional-config "$ADDITIONAL_CONFIG" \
+  "${PD_ARGS[@]}" \
   "${SCHEDULING_ARGS[@]}" \
   "${MTP_ARGS[@]}" \
   "${UBATCH_ARGS[@]}" \

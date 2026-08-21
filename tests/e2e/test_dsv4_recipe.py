@@ -175,6 +175,52 @@ def test_dsv4_hccl_recipe_selects_hccl_connector_without_copying_validator():
         assert "P2pHcclAFDConnector currently supports only" not in shared_script
 
 
+def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
+    shared_attention = (RUNNER_PATH.parent / "afd_attention.sh").read_text(
+        encoding="utf-8"
+    )
+    decode_attention = (HCCL_RECIPE_DIR / "pd_decode_attention.sh").read_text(
+        encoding="utf-8"
+    )
+    prefill = (HCCL_RECIPE_DIR / "pd_prefill.sh").read_text(encoding="utf-8")
+    ffn = (HCCL_RECIPE_DIR / "afd_ffn.sh").read_text(encoding="utf-8")
+    mooncake_master = (HCCL_RECIPE_DIR / "start_mooncake_master.sh").read_text(
+        encoding="utf-8"
+    )
+    decode_service = (HCCL_RECIPE_DIR / "start_decode.sh").read_text(encoding="utf-8")
+    proxy = (REPO_ROOT / "tools/dsv4/pd_afd_proxy.py").read_text(encoding="utf-8")
+
+    assert '"kv_connector":"MooncakeHybridConnector"' in shared_attention
+    assert '"kv_role":"kv_consumer"' in shared_attention
+    assert "--no-disable-hybrid-kv-cache-manager" in shared_attention
+    assert "export ENABLE_PD=1" in decode_attention
+    assert "DECODE_STANDALONE_AF" in decode_attention
+
+    assert '"kv_connector":"MooncakeHybridConnector"' in prefill
+    assert '"kv_connector":"MultiConnector"' in prefill
+    assert '"kv_connector":"AscendStoreConnector"' in prefill
+    assert '"backend":"mooncake"' in prefill
+    assert '"kv_role":"kv_producer"' in prefill
+    assert '--data-parallel-size "$PREFILL_DP_SIZE"' in prefill
+    assert '--tensor-parallel-size "$PREFILL_TP_SIZE"' in prefill
+    assert "ascend_kv_connector,afd" not in prefill
+
+    assert '"kv_connector":"MultiConnector"' in decode_attention
+    assert '"kv_connector":"AscendStoreConnector"' in decode_attention
+    assert '"kv_role":"kv_consumer"' in decode_attention
+    assert "wait_for_mooncake_master" in decode_attention
+
+    assert "exec mooncake_master" in mooncake_master
+    assert "--default_kv_lease_ttl" in mooncake_master
+    assert "afd_ffn.sh" in decode_service
+    assert "pd_decode_attention.sh" in decode_service
+    assert "wait -n" in decode_service
+
+    assert "--kv-transfer-config" not in ffn
+    assert '"do_remote_decode": True' in proxy
+    assert 'decode_payload["kv_transfer_params"] = kv_transfer_params' in proxy
+
+
 def test_dsv4_v023_native_baseline_has_explicit_mtp_switch():
     script = (REPO_ROOT / "tools/dsv4/run_v023_native_baseline.sh").read_text(
         encoding="utf-8"

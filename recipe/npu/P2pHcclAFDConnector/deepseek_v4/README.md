@@ -1,5 +1,8 @@
 # DeepSeek-V4 HCCL P2P validation
 
+For the native-Prefill plus AFD-Decode Mooncake baseline, see
+[PD_AFD_DEPLOYMENT_ZH.md](PD_AFD_DEPLOYMENT_ZH.md).
+
 For the pinned vLLM 0.23 + vLLM-Ascend installation and A8F8 deployment
 procedure, see the
 [Chinese installation and deployment guide](../../../../docs/npu/DEEPSEEK_V4_AFD_HCCL_P2P_INSTALL_DEPLOYMENT_GUIDE_ZH.md).
@@ -18,9 +21,11 @@ Supported execution boundary:
 - eager U1 or eager U2, including the integer-multiple topologies above;
 - `FULL_DECODE_ONLY` Graph U1 for equal Attention/FFN rank counts;
 - eager U1 + MTP for A8F8, one MTP layer, and one speculative token;
+- two-node Mooncake Store PD with native Prefill DP4/TP4 and AFD Decode
+  Attention DP8/TP1 plus FFN DP8/TP1/EP8, eager U1 without MTP;
 - Graph U2, Graph with unequal Attention/FFN ranks, Graph/U2/unequal MTP,
-  multiple speculative tokens, PD, sequence parallelism, and Attention-side
-  gate are disabled.
+  multiple speculative tokens, PD with Graph/U2/MTP, sequence parallelism,
+  and Attention-side gate are disabled.
 
 The public communication API remains synchronous: every eager transfer still
 calls blocking `torch.distributed.send/recv`. Eager U2 additionally uses
