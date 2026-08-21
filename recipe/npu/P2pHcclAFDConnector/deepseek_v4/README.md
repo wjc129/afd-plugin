@@ -22,9 +22,9 @@ Supported execution boundary:
 - `FULL_DECODE_ONLY` Graph U1 for equal Attention/FFN rank counts;
 - eager U1 + MTP for A8F8, one MTP layer, and one speculative token;
 - two-node Mooncake Store PD with native Prefill DP4/TP4 and AFD Decode
-  Attention DP8/TP1 plus FFN DP8/TP1/EP8, eager U1 without MTP;
+  Attention DP8/TP1 plus FFN DP8/TP1/EP8, eager U1 or eager U2 without MTP;
 - Graph U2, Graph with unequal Attention/FFN ranks, Graph/U2/unequal MTP,
-  multiple speculative tokens, PD with Graph/U2/MTP, sequence parallelism,
+  multiple speculative tokens, PD with Graph/MTP, sequence parallelism,
   and Attention-side gate are disabled.
 
 The public communication API remains synchronous: every eager transfer still

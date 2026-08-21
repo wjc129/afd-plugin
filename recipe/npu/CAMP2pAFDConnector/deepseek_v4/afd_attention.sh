@@ -183,8 +183,8 @@ case "$ENABLE_PD" in
       echo "DeepSeek-V4 PD x AFD baseline requires P2pHcclAFDConnector" >&2
       exit 2
     fi
-    if [[ "$EXECUTION_MODE" != "eager" || "$U_BATCHES" != "1" ]]; then
-      echo "DeepSeek-V4 PD x AFD baseline requires eager/U1" >&2
+    if [[ "$EXECUTION_MODE" != "eager" ]]; then
+      echo "DeepSeek-V4 PD x AFD requires eager execution" >&2
       exit 2
     fi
     if [[ "$ENABLE_MTP" != "0" ]]; then

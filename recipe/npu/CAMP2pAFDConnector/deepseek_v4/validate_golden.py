@@ -69,6 +69,11 @@ def main() -> None:
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--batch-sizes", type=int, nargs="*", default=[1, 8, 32])
     parser.add_argument("--prompt-indices", type=int, nargs="*")
+    parser.add_argument(
+        "--require-batch-token-exact",
+        action="store_true",
+        help="Fail when any batched output differs from its golden token IDs.",
+    )
     args = parser.parse_args()
 
     golden_report = json.loads(args.golden.read_text(encoding="utf-8"))
@@ -135,6 +140,14 @@ def main() -> None:
                 mismatches.append(
                     {"batch_size": batch_size, "choice": index, "kind": "invalid"}
                 )
+            elif args.require_batch_token_exact and not token_exact[-1]:
+                mismatches.append(
+                    {
+                        "batch_size": batch_size,
+                        "choice": index,
+                        "kind": "token_mismatch",
+                    }
+                )
         batch_records.append(
             {
                 "batch_size": batch_size,
@@ -155,6 +168,7 @@ def main() -> None:
         "model": args.model,
         "golden_source": str(args.golden),
         "rounds": args.rounds,
+        "require_batch_token_exact": args.require_batch_token_exact,
         "prompt_count": len(prompts),
         "prompt_indices": prompt_indices,
         "request_count": args.rounds * len(prompts),

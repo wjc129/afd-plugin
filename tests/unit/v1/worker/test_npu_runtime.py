@@ -3211,6 +3211,18 @@ def test_dsv4_feature_validation_accepts_mooncake_pd_decode_attention():
     fail_if_unsupported_npu_afd_features(_dsv4_pd_config(decode_dp_size=8))
 
 
+def test_dsv4_feature_validation_accepts_mooncake_pd_decode_attention_u2():
+    fail_if_unsupported_npu_afd_features(
+        _dsv4_pd_config(
+            decode_dp_size=8,
+            enable_dbo=True,
+            use_ubatching=True,
+            num_ubatches=2,
+            ubatch_size=2,
+        )
+    )
+
+
 def test_dsv4_feature_validation_accepts_mooncake_managed_pd_decode_attention():
     fail_if_unsupported_npu_afd_features(
         _dsv4_managed_pd_config(
@@ -3257,9 +3269,9 @@ def test_dsv4_feature_validation_accepts_mooncake_managed_pd_decode_attention():
         (
             lambda config: (
                 setattr(config.parallel_config, "use_ubatching", True),
-                setattr(config.parallel_config, "num_ubatches", 2),
+                setattr(config.parallel_config, "num_ubatches", 3),
             ),
-            "only U1",
+            "U2 requires exactly two ubatches",
         ),
         (
             lambda config: setattr(

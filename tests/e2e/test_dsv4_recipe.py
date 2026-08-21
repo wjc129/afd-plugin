@@ -188,6 +188,15 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
         encoding="utf-8"
     )
     decode_service = (HCCL_RECIPE_DIR / "start_decode.sh").read_text(encoding="utf-8")
+    decode_u2 = (HCCL_RECIPE_DIR / "start_decode_u2.sh").read_text(
+        encoding="utf-8"
+    )
+    prefill_stack_u2 = (HCCL_RECIPE_DIR / "start_prefill_stack_u2.sh").read_text(
+        encoding="utf-8"
+    )
+    u2_validator = (HCCL_RECIPE_DIR / "validate_two_node_u2.sh").read_text(
+        encoding="utf-8"
+    )
     proxy = (REPO_ROOT / "tools/dsv4/pd_afd_proxy.py").read_text(encoding="utf-8")
 
     assert '"kv_connector":"MooncakeHybridConnector"' in shared_attention
@@ -215,6 +224,13 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
     assert "afd_ffn.sh" in decode_service
     assert "pd_decode_attention.sh" in decode_service
     assert "wait -n" in decode_service
+    assert 'export DECODE_U_BATCHES=2' in decode_u2
+    assert 'export EXECUTION_MODE=eager' in decode_u2
+    assert "start_mooncake_master.sh" in prefill_stack_u2
+    assert "pd_prefill.sh" in prefill_stack_u2
+    assert "start_proxy.sh" in prefill_stack_u2
+    assert "--batch-sizes 1 8 32" in u2_validator
+    assert "--require-batch-token-exact" in u2_validator
 
     assert "--kv-transfer-config" not in ffn
     assert '"do_remote_decode": True' in proxy

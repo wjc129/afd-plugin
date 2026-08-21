@@ -19,7 +19,8 @@ ASCEND_STORE_CONNECTOR = "AscendStoreConnector"
 MOONCAKE_STORE_BACKEND = "mooncake"
 PD_AFD_CONNECTOR = "P2pHcclAFDConnector"
 PD_DECODE_TENSOR_PARALLEL_SIZE = 1
-PD_NUM_UBATCHES = 1
+PD_NUM_UBATCHES_U1 = 1
+PD_NUM_UBATCHES_U2 = 2
 
 if TYPE_CHECKING:
     from vllm.config import KVTransferConfig, VllmConfig
@@ -242,7 +243,7 @@ def _fail_if_unsupported_deepseek_v4_pd_features(
     vllm_config: VllmConfig,
     afd_config: AFDConfig,
 ) -> None:
-    """Validate the first supported DeepSeek-V4 PD x AFD deployment.
+    """Validate the supported DeepSeek-V4 PD x AFD deployment.
 
     Prefill remains a native vLLM-Ascend service. The AFD service is the
     Decode side, where only Attention owns KV cache and consumes Mooncake data;
@@ -275,13 +276,18 @@ def _fail_if_unsupported_deepseek_v4_pd_features(
         )
     if not vllm_config.model_config.enforce_eager:
         raise RuntimeError(
-            "DeepSeek-V4 PD x AFD baseline supports only eager execution"
+            "DeepSeek-V4 PD x AFD supports only eager execution"
         )
-    if (
-        parallel_config.use_ubatching
-        or int(parallel_config.num_ubatches) != PD_NUM_UBATCHES
-    ):
-        raise RuntimeError("DeepSeek-V4 PD x AFD baseline supports only U1")
+    uses_ubatching = bool(parallel_config.use_ubatching)
+    num_ubatches = int(parallel_config.num_ubatches)
+    if uses_ubatching and num_ubatches != PD_NUM_UBATCHES_U2:
+        raise RuntimeError(
+            "DeepSeek-V4 PD x AFD U2 requires exactly two ubatches"
+        )
+    if not uses_ubatching and num_ubatches != PD_NUM_UBATCHES_U1:
+        raise RuntimeError(
+            "DeepSeek-V4 PD x AFD supports only eager U1 or eager U2"
+        )
     if vllm_config.speculative_config is not None:
         raise RuntimeError("DeepSeek-V4 PD x AFD baseline does not support MTP")
 
