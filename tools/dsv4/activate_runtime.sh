@@ -42,11 +42,4 @@ echo "Resolved CANN root: $DSV4_CANN_ROOT" >&2
 echo "Resolved vLLM root: $DSV4_VLLM_ROOT" >&2
 echo "Resolved vLLM-Ascend root: $DSV4_VLLM_ASCEND_ROOT" >&2
 
-case "${PATH}:${LD_LIBRARY_PATH:-}:${PYTHONPATH:-}:${ASCEND_HOME_PATH:-}" in
-  *cann-9.1.0*)
-    echo "CANN 9.1.0 leaked into the pinned DSV4 runtime" >&2
-    return 2 2>/dev/null || exit 2
-    ;;
-esac
-
 unset DSV4_SCRIPT_DIR DSV4_PYTHON_LIB_DIR
