@@ -38,7 +38,8 @@ DSV4_TORCH_CXX11_ABI="$("$DSV4_RUNTIME_PYTHON" -c 'import torch; print(int(torch
 DSV4_CANN_SEARCH_MAX_DEPTH=8
 DSV4_ATB_LIBRARY="$(
   find "$DSV4_CANN_ROOT" "$(dirname "$DSV4_CANN_ROOT")" \
-    -maxdepth "$DSV4_CANN_SEARCH_MAX_DEPTH" -type f \
+    -maxdepth "$DSV4_CANN_SEARCH_MAX_DEPTH" \
+    \( -type f -o -type l \) \
     -path "*/cxx_abi_${DSV4_TORCH_CXX11_ABI}/libatb.so" \
     -print -quit 2>/dev/null
 )"
