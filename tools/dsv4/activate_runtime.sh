@@ -27,14 +27,23 @@ export PYTHONPATH=
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 source "${DSV4_CANN_ROOT}/set_env.sh"
-if [[ -f "${DSV4_CANN_ROOT}/nnal/atb/set_env.sh" ]]; then
-  source "${DSV4_CANN_ROOT}/nnal/atb/set_env.sh"
-fi
-
 DSV4_SITE_PACKAGES="$("$DSV4_RUNTIME_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 export PYTHONPATH="${DSV4_SITE_PACKAGES}${PYTHONPATH:+:${PYTHONPATH}}"
 
 DSV4_TORCH_CXX11_ABI="$("$DSV4_RUNTIME_PYTHON" -c 'import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))')"
+DSV4_ATB_ENV_PATH=""
+for DSV4_ATB_ENV_CANDIDATE in \
+  "${DSV4_CANN_ROOT}/nnal/atb/set_env.sh" \
+  "$(dirname "$DSV4_CANN_ROOT")/nnal/atb/set_env.sh"; do
+  if [[ -f "$DSV4_ATB_ENV_CANDIDATE" ]]; then
+    DSV4_ATB_ENV_PATH="$DSV4_ATB_ENV_CANDIDATE"
+    break
+  fi
+done
+if [[ -n "$DSV4_ATB_ENV_PATH" ]]; then
+  source "$DSV4_ATB_ENV_PATH" "--cxx_abi=${DSV4_TORCH_CXX11_ABI}"
+fi
+
 DSV4_CANN_SEARCH_MAX_DEPTH=8
 DSV4_ATB_LIBRARY="$(
   find "$DSV4_CANN_ROOT" "$(dirname "$DSV4_CANN_ROOT")" \
@@ -61,9 +70,12 @@ export DSV4_VLLM_VENV DSV4_VLLM_ROOT DSV4_VLLM_ASCEND_ROOT
 
 echo "Resolved DSV4 Python: $DSV4_RUNTIME_PYTHON" >&2
 echo "Resolved CANN root: $DSV4_CANN_ROOT" >&2
+echo "Resolved ATB environment: ${DSV4_ATB_ENV_PATH:-not found}" >&2
+echo "Resolved ATB library: ${DSV4_ATB_LIBRARY:-not found}" >&2
 echo "Resolved vLLM root: $DSV4_VLLM_ROOT" >&2
 echo "Resolved vLLM-Ascend root: $DSV4_VLLM_ASCEND_ROOT" >&2
 
 unset DSV4_SCRIPT_DIR DSV4_PYTHON_LIB_DIR DSV4_SITE_PACKAGES
-unset DSV4_TORCH_CXX11_ABI DSV4_CANN_SEARCH_MAX_DEPTH DSV4_ATB_LIBRARY
+unset DSV4_TORCH_CXX11_ABI DSV4_ATB_ENV_PATH DSV4_ATB_ENV_CANDIDATE
+unset DSV4_CANN_SEARCH_MAX_DEPTH DSV4_ATB_LIBRARY
 unset DSV4_RUNTIME_LIBRARY_DIRS DSV4_RUNTIME_LIBRARY_PATH
