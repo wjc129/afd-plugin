@@ -51,7 +51,7 @@ case "$PD_KV_MODE" in
   store)
     prepare_mooncake_client_config
     wait_for_mooncake_master
-    PD_KV_TRANSFER_CONFIG="$(printf '{"kv_connector":"MultiConnector","kv_role":"kv_producer","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"connectors":[{"kv_connector":"MooncakeHybridConnector","kv_role":"kv_producer","kv_port":"%s","engine_id":"%s","kv_connector_extra_config":{"prefill":{"dp_size":%s,"tp_size":%s},"decode":{"dp_size":%s,"tp_size":%s}}},{"kv_connector":"AscendStoreConnector","kv_role":"kv_producer","kv_connector_extra_config":{"lookup_rpc_port":"%s","backend":"mooncake"}}]}}' "$PD_KV_PORT" "$PD_ENGINE_ID" "$PREFILL_DP_SIZE" "$PREFILL_TP_SIZE" "$DECODE_DP_SIZE" "$DECODE_TP_SIZE" "$STORE_LOOKUP_RPC_PORT")"
+    PD_KV_TRANSFER_CONFIG="$(printf '{"kv_connector":"MultiConnector","kv_role":"kv_producer","engine_id":"%s","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"connectors":[{"kv_connector":"MooncakeHybridConnector","kv_role":"kv_producer","kv_port":"%s","kv_connector_extra_config":{"prefill":{"dp_size":%s,"tp_size":%s},"decode":{"dp_size":%s,"tp_size":%s}}},{"kv_connector":"AscendStoreConnector","kv_role":"kv_producer","kv_connector_extra_config":{"lookup_rpc_port":"%s","backend":"mooncake"}}]}}' "$PD_ENGINE_ID" "$PD_KV_PORT" "$PREFILL_DP_SIZE" "$PREFILL_TP_SIZE" "$DECODE_DP_SIZE" "$DECODE_TP_SIZE" "$STORE_LOOKUP_RPC_PORT")"
     ;;
   *)
     echo "PD_KV_MODE must be direct or store" >&2
