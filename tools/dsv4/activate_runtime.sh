@@ -45,13 +45,18 @@ if [[ -n "$DSV4_ATB_ENV_PATH" ]]; then
 fi
 
 DSV4_CANN_SEARCH_MAX_DEPTH=8
-DSV4_ATB_LIBRARY="$(
-  find "$DSV4_CANN_ROOT" "$(dirname "$DSV4_CANN_ROOT")" \
-    -maxdepth "$DSV4_CANN_SEARCH_MAX_DEPTH" \
-    \( -type f -o -type l \) \
-    -path "*/cxx_abi_${DSV4_TORCH_CXX11_ABI}/libatb.so" \
-    -print -quit 2>/dev/null
-)"
+DSV4_ATB_LIBRARY=""
+if [[ -n "${ATB_HOME_PATH:-}" && -e "${ATB_HOME_PATH}/lib/libatb.so" ]]; then
+  DSV4_ATB_LIBRARY="${ATB_HOME_PATH}/lib/libatb.so"
+else
+  DSV4_ATB_LIBRARY="$(
+    find "$DSV4_CANN_ROOT" "$(dirname "$DSV4_CANN_ROOT")" \
+      -maxdepth "$DSV4_CANN_SEARCH_MAX_DEPTH" \
+      \( -type f -o -type l \) \
+      -path "*/cxx_abi_${DSV4_TORCH_CXX11_ABI}/libatb.so" \
+      -print -quit 2>/dev/null
+  )"
+fi
 DSV4_RUNTIME_LIBRARY_DIRS=(
   "${DSV4_SITE_PACKAGES}/torch/lib"
   "${DSV4_SITE_PACKAGES}/torch_npu/lib"
