@@ -31,6 +31,27 @@ if [[ -f "${DSV4_CANN_ROOT}/nnal/atb/set_env.sh" ]]; then
   source "${DSV4_CANN_ROOT}/nnal/atb/set_env.sh"
 fi
 
+DSV4_SITE_PACKAGES="$("$DSV4_RUNTIME_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+export PYTHONPATH="${DSV4_SITE_PACKAGES}${PYTHONPATH:+:${PYTHONPATH}}"
+
+DSV4_TORCH_CXX11_ABI="$("$DSV4_RUNTIME_PYTHON" -c 'import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))')"
+DSV4_CANN_SEARCH_MAX_DEPTH=8
+DSV4_ATB_LIBRARY="$(
+  find "$DSV4_CANN_ROOT" "$(dirname "$DSV4_CANN_ROOT")" \
+    -maxdepth "$DSV4_CANN_SEARCH_MAX_DEPTH" -type f \
+    -path "*/cxx_abi_${DSV4_TORCH_CXX11_ABI}/libatb.so" \
+    -print -quit 2>/dev/null
+)"
+DSV4_RUNTIME_LIBRARY_DIRS=(
+  "${DSV4_SITE_PACKAGES}/torch/lib"
+  "${DSV4_SITE_PACKAGES}/torch_npu/lib"
+)
+if [[ -n "$DSV4_ATB_LIBRARY" ]]; then
+  DSV4_RUNTIME_LIBRARY_DIRS+=("$(dirname "$DSV4_ATB_LIBRARY")")
+fi
+DSV4_RUNTIME_LIBRARY_PATH="$(IFS=:; printf '%s' "${DSV4_RUNTIME_LIBRARY_DIRS[*]}")"
+export LD_LIBRARY_PATH="${DSV4_RUNTIME_LIBRARY_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
 export VIRTUAL_ENV="${DSV4_VLLM_VENV}"
 export PATH="${DSV4_VLLM_VENV}/bin:${PATH}"
 export VLLM_PLUGINS=ascend,ascend_model,ascend_model_loader,ascend_kv_connector,afd
@@ -42,4 +63,6 @@ echo "Resolved CANN root: $DSV4_CANN_ROOT" >&2
 echo "Resolved vLLM root: $DSV4_VLLM_ROOT" >&2
 echo "Resolved vLLM-Ascend root: $DSV4_VLLM_ASCEND_ROOT" >&2
 
-unset DSV4_SCRIPT_DIR DSV4_PYTHON_LIB_DIR
+unset DSV4_SCRIPT_DIR DSV4_PYTHON_LIB_DIR DSV4_SITE_PACKAGES
+unset DSV4_TORCH_CXX11_ABI DSV4_CANN_SEARCH_MAX_DEPTH DSV4_ATB_LIBRARY
+unset DSV4_RUNTIME_LIBRARY_DIRS DSV4_RUNTIME_LIBRARY_PATH
