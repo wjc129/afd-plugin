@@ -3,6 +3,9 @@
 For the native-Prefill plus AFD-Decode Mooncake baseline, see
 [PD_AFD_DEPLOYMENT_ZH.md](PD_AFD_DEPLOYMENT_ZH.md).
 
+For the experimental Decode Graph/U2 service entry points, see
+[PD_AFD_GRAPH_U2_EXPERIMENT_ZH.md](PD_AFD_GRAPH_U2_EXPERIMENT_ZH.md).
+
 For the pinned vLLM 0.23 + vLLM-Ascend installation and A8F8 deployment
 procedure, see the
 [Chinese installation and deployment guide](../../../../docs/npu/DEEPSEEK_V4_AFD_HCCL_P2P_INSTALL_DEPLOYMENT_GUIDE_ZH.md).
@@ -20,20 +23,23 @@ Supported execution boundary:
 - integer-multiple topology contract `A >= F` and `A % F == 0`;
 - eager U1 or eager U2, including the integer-multiple topologies above;
 - `FULL_DECODE_ONLY` Graph U1 for equal Attention/FFN rank counts;
+- experimental `FULL_DECODE_ONLY` Graph U2 for equal Attention/FFN rank counts;
 - eager U1 + MTP for A8F8, one MTP layer, and one speculative token;
 - two-node Mooncake Store PD with native Prefill DP4/TP4 and AFD Decode
   Attention DP8/TP1 plus FFN DP8/TP1/EP8, eager U1 or eager U2 without MTP;
-- Graph U2, Graph with unequal Attention/FFN ranks, Graph/U2/unequal MTP,
-  multiple speculative tokens, PD with Graph/MTP, sequence parallelism,
-  and Attention-side gate are disabled.
+- experimental PD Decode Graph/U2 with the same equal-rank topology and no MTP;
+- Graph with unequal Attention/FFN ranks, Graph/U2/unequal MTP, multiple
+  speculative tokens, PD with MTP, sequence parallelism, and Attention-side
+  gate are disabled.
 
 The public communication API remains synchronous: every eager transfer still
 calls blocking `torch.distributed.send/recv`. Eager U2 additionally uses
 connector-owned NPU send/receive/compute streams and events to order device
 work across the two stages. DeepSeek-V4 drives the stages from one layer-major
 host loop; it does not use `isend/irecv`, background transfer threads, or an
-asynchronous custom HCCL op. U1, Graph U1, and MTP retain their existing
-execution paths.
+asynchronous custom HCCL op. Graph U2 captures the same stage-local
+receive/compute/send stream dependencies into the target ACL Graph. U1,
+Graph U1, and MTP retain their existing execution paths.
 
 Under Graph U1, torch-npu lowers the hidden-state `send/recv` calls into the
 ACL Graph. Input IDs remain on the one-shot HCCL side channel before capture or
@@ -89,9 +95,10 @@ python recipe/npu/P2pHcclAFDConnector/deepseek_v4/run_validation.py \
   --output-dir /mnt/workspace/validation/dsv4_afd_hccl_p2p_u2_$(date +%Y%m%d_%H%M%S)
 ```
 
-The HCCL connector rejects Graph U2, Graph with unequal rank counts, `A < F`,
-and non-integer A/F ratios. The shared validator records the selected connector
-in `runtime.json` and preserves the same golden, lifecycle, fatal-log, and NPU
+The HCCL connector rejects Graph with unequal rank counts, `A < F`, and
+non-integer A/F ratios. Graph U2 is experimental and requires the equal-rank
+P2pHccl recipe. The shared validator records the selected connector in
+`runtime.json` and preserves the same golden, lifecycle, fatal-log, and NPU
 cleanup gates used by the CAMP2P baseline.
 
 The data path uses blocking HCCL point-to-point API calls. Under eager U2,

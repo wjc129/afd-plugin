@@ -1740,7 +1740,11 @@ def test_npu_ffn_runner_computes_stage_token_layout_once_per_step(monkeypatch):
     assert len(runner.connector.ffn_outputs) == 6
 
 
-def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(monkeypatch):
+@pytest.mark.parametrize("is_graph_capturing", [False, True])
+def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(
+    monkeypatch,
+    is_graph_capturing,
+):
     _require_npu_runtime()
     from afd_plugin.v1.worker.npu import ffn_model_runner
 
@@ -1875,6 +1879,10 @@ def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(monkeypatch)
             0: _FakeDPMetadata([1]),
             1: _FakeDPMetadata([1]),
         },
+        aclgraph_runtime_mode=(
+            ffn_model_runner.CUDAGraphMode.FULL if is_graph_capturing else None
+        ),
+        is_graph_capturing=is_graph_capturing,
     )
 
     for layer_idx in range(2):
@@ -3225,6 +3233,19 @@ def test_dsv4_feature_validation_accepts_mooncake_pd_decode_attention_u2():
     )
 
 
+def test_dsv4_feature_validation_accepts_mooncake_pd_decode_attention_graph_u2():
+    config = _dsv4_pd_config(
+        decode_dp_size=8,
+        enable_dbo=True,
+        use_ubatching=True,
+        num_ubatches=2,
+        ubatch_size=2,
+    )
+    config.model_config.enforce_eager = False
+
+    fail_if_unsupported_npu_afd_features(config)
+
+
 def test_dsv4_feature_validation_accepts_mooncake_managed_pd_decode_attention():
     fail_if_unsupported_npu_afd_features(
         _dsv4_managed_pd_config(
@@ -3263,10 +3284,6 @@ def test_dsv4_feature_validation_accepts_mooncake_managed_pd_decode_attention():
                 "kv_producer",
             ),
             "requires kv_role='kv_consumer'",
-        ),
-        (
-            lambda config: setattr(config.model_config, "enforce_eager", False),
-            "only eager execution",
         ),
         (
             lambda config: (
@@ -3425,7 +3442,7 @@ def test_dsv4_feature_validation_rejects_other_graph_modes(cudagraph_mode):
         fail_if_unsupported_npu_afd_features(config)
 
 
-def test_dsv4_feature_validation_rejects_graph_u2():
+def test_dsv4_feature_validation_rejects_camp2p_graph_u2():
     config = _dsv4_config(
         cudagraph_mode="FULL_DECODE_ONLY",
         enable_dbo=True,
@@ -3435,8 +3452,22 @@ def test_dsv4_feature_validation_rejects_graph_u2():
     )
     config.model_config.enforce_eager = False
 
-    with pytest.raises(RuntimeError, match="only eager execution"):
+    with pytest.raises(RuntimeError, match="Graph/U2 requires P2pHcclAFDConnector"):
         fail_if_unsupported_npu_afd_features(config)
+
+
+def test_dsv4_feature_validation_accepts_hccl_p2p_graph_u2():
+    config = _dsv4_config(
+        cudagraph_mode="FULL_DECODE_ONLY",
+        enable_dbo=True,
+        use_ubatching=True,
+        num_ubatches=2,
+        ubatch_size=2,
+    )
+    config.model_config.enforce_eager = False
+    config.additional_config["afd"]["connector"] = "P2pHcclAFDConnector"
+
+    fail_if_unsupported_npu_afd_features(config)
 
 
 def test_npu_feature_validation_allows_two_ubatches_only():

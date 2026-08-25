@@ -127,8 +127,9 @@ case "$U_BATCHES" in
     UBATCH_ARGS=()
     ;;
   2)
-    if [[ "$EXECUTION_MODE" != "eager" ]]; then
-      echo "DeepSeek-V4 U2 currently supports only EXECUTION_MODE=eager" >&2
+    if [[ "$EXECUTION_MODE" == "full-decode-only" ]] &&
+       [[ "$AFD_CONNECTOR" != "P2pHcclAFDConnector" ]]; then
+      echo "DeepSeek-V4 Graph/U2 requires P2pHcclAFDConnector" >&2
       exit 2
     fi
     UBATCH_ARGS=(

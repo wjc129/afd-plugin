@@ -215,6 +215,20 @@ def test_dsv4_pd_afd_recipe_keeps_kv_transfer_on_attention_only():
     assert 'decode_payload["kv_transfer_params"] = kv_transfer_params' in proxy
 
 
+def test_dsv4_pd_afd_graph_u2_wrappers_force_graph_and_u2():
+    attention = (
+        HCCL_RECIPE_DIR / "pd_decode_attention_graph_u2.sh"
+    ).read_text(encoding="utf-8")
+    ffn = (HCCL_RECIPE_DIR / "afd_ffn_graph_u2.sh").read_text(encoding="utf-8")
+
+    for script in (attention, ffn):
+        assert "export EXECUTION_MODE=full-decode-only" in script
+        assert "export U_BATCHES=2" in script
+        assert "export ENABLE_MTP=0" in script
+        assert "export AFD_ASYNC_SCHEDULING=off" in script
+    assert "export DECODE_U_BATCHES=2" in attention
+
+
 def test_dsv4_server_launch_wrappers_stay_private():
     private_names = (
         "two_node_16npu.env.example",
@@ -377,6 +391,7 @@ def test_dsv4_hccl_graph_topology_requires_equal_roles():
     runner._validate_execution_topology(
         connector="P2pHcclAFDConnector",
         execution_mode="full-decode-only",
+        u_batches=2,
         topology={"attention_ranks": 8, "ffn_ranks": 8},
     )
     with pytest.raises(ValueError, match="requires equal Attention and FFN"):

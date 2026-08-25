@@ -156,7 +156,7 @@ MTP M1 只支持等量 A8F8、eager/U1、一个 MTP layer 和一个 speculative 
 - HCCL Connector 不需要 `pip install hccl`；
 - HCCL-only 不构建 afd-plugin CAMP2P custom ops；
 - vLLM-Ascend `custom_transformer` ops 仍必须构建和 source；
-- Graph 只支持 U1 和等量 A/F；
+- Graph 支持等量 A/F 下的 U1；Graph/U2 为实验模式；
 - MTP M1 只支持 eager/U1 和等量 A8F8；
 - 业务流量只进入 Attention API；
 - 启动成功必须同时满足 Attention health 和全部 FFN connector loop ready。

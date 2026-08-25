@@ -433,11 +433,17 @@ class AFDNPUFFNModelRunner(NPUModelRunner):
         if input_ids_cache is None:
             input_ids_cache = self._ffn_input_ids_cache = {}
         input_ids_cache.clear()
+        eager_stream_pipeline = bool(
+            not is_graph_capturing
+            and aclgraph_runtime_mode in (None, CUDAGraphMode.NONE)
+        )
+        graph_stream_pipeline = bool(
+            is_graph_capturing and aclgraph_runtime_mode is CUDAGraphMode.FULL
+        )
         stream_overlap = bool(
             getattr(self, "ffn_stream_overlap_enabled", False)
             and len(stage_ids) > 1
-            and not is_graph_capturing
-            and aclgraph_runtime_mode in (None, CUDAGraphMode.NONE)
+            and (eager_stream_pipeline or graph_stream_pipeline)
         )
         if stream_overlap:
             assert isinstance(self.connector, P2pHcclAFDConnector)

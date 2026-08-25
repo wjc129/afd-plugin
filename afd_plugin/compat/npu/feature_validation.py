@@ -231,9 +231,12 @@ def _fail_if_unsupported_deepseek_v4_features(
             raise RuntimeError(
                 "DeepSeek-V4 AFD graph execution supports only FULL_DECODE_ONLY"
             )
-        if parallel_config.use_ubatching:
+        if (
+            parallel_config.use_ubatching
+            and afd_config.connector != PD_AFD_CONNECTOR
+        ):
             raise RuntimeError(
-                "DeepSeek-V4 AFD DBO/ubatching currently supports only eager execution"
+                "DeepSeek-V4 AFD Graph/U2 requires P2pHcclAFDConnector"
             )
     if vllm_config.kv_transfer_config is not None:
         _fail_if_unsupported_deepseek_v4_pd_features(vllm_config, afd_config)
@@ -274,10 +277,6 @@ def _fail_if_unsupported_deepseek_v4_pd_features(
             "DeepSeek-V4 AFD is the Decode side of PD and requires "
             "kv_role='kv_consumer'"
         )
-    if not vllm_config.model_config.enforce_eager:
-        raise RuntimeError(
-            "DeepSeek-V4 PD x AFD supports only eager execution"
-        )
     uses_ubatching = bool(parallel_config.use_ubatching)
     num_ubatches = int(parallel_config.num_ubatches)
     if uses_ubatching and num_ubatches != PD_NUM_UBATCHES_U2:
@@ -286,7 +285,7 @@ def _fail_if_unsupported_deepseek_v4_pd_features(
         )
     if not uses_ubatching and num_ubatches != PD_NUM_UBATCHES_U1:
         raise RuntimeError(
-            "DeepSeek-V4 PD x AFD supports only eager U1 or eager U2"
+            "DeepSeek-V4 PD x AFD supports only U1 or U2"
         )
     if vllm_config.speculative_config is not None:
         raise RuntimeError("DeepSeek-V4 PD x AFD baseline does not support MTP")

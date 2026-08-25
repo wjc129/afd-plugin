@@ -707,8 +707,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.u_batches == 2 and args.execution_mode != "eager":
-        parser.error("DeepSeek-V4 U2 currently supports only eager execution")
+    if (
+        args.u_batches == 2
+        and args.execution_mode == "full-decode-only"
+        and args.connector != "P2pHcclAFDConnector"
+    ):
+        parser.error("DeepSeek-V4 Graph/U2 requires P2pHcclAFDConnector")
     if args.dbo_decode_token_threshold < 0:
         parser.error("--dbo-decode-token-threshold must be non-negative")
     if args.dbo_prefill_token_threshold < 0:

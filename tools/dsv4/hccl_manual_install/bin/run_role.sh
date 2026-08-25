@@ -76,7 +76,6 @@ case "${EXECUTION_MODE}" in
     execution_args=(--enforce-eager)
     ;;
   full-decode-only)
-    [[ "${U_BATCHES}" == "1" ]] || die "Graph requires U1"
     [[ "${ATTENTION_RANKS}" == "${FFN_RANKS}" ]] \
       || die "Graph requires equal A/F ranks"
     read -r -a capture_sizes <<<"${CUDAGRAPH_CAPTURE_SIZES}"
@@ -95,7 +94,6 @@ ubatch_args=()
 case "${U_BATCHES}" in
   1) ;;
   2)
-    [[ "${EXECUTION_MODE}" == "eager" ]] || die "U2 requires eager mode"
     ubatch_args=(
       --enable-dbo
       --dbo-decode-token-threshold "${DBO_DECODE_TOKEN_THRESHOLD}"

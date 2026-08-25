@@ -140,8 +140,9 @@ case "$U_BATCHES" in
     UBATCH_ARGS=()
     ;;
   2)
-    if [[ "$EXECUTION_MODE" != "eager" ]]; then
-      echo "DeepSeek-V4 U2 currently supports only EXECUTION_MODE=eager" >&2
+    if [[ "$EXECUTION_MODE" == "full-decode-only" ]] &&
+       [[ "$AFD_CONNECTOR" != "P2pHcclAFDConnector" ]]; then
+      echo "DeepSeek-V4 Graph/U2 requires P2pHcclAFDConnector" >&2
       exit 2
     fi
     UBATCH_ARGS=(
@@ -179,10 +180,6 @@ case "$ENABLE_PD" in
   1)
     if [[ "$AFD_CONNECTOR" != "P2pHcclAFDConnector" ]]; then
       echo "DeepSeek-V4 PD x AFD baseline requires P2pHcclAFDConnector" >&2
-      exit 2
-    fi
-    if [[ "$EXECUTION_MODE" != "eager" ]]; then
-      echo "DeepSeek-V4 PD x AFD requires eager execution" >&2
       exit 2
     fi
     if [[ "$ENABLE_MTP" != "0" ]]; then

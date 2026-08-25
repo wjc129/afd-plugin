@@ -74,7 +74,6 @@ case "${U_BATCHES}" in
   *) die "U_BATCHES must be 1 or 2" ;;
 esac
 if [[ "${EXECUTION_MODE}" == "full-decode-only" ]]; then
-  [[ "${U_BATCHES}" == "1" ]] || die "Graph requires U1"
   [[ "${ATTENTION_RANKS}" == "${FFN_RANKS}" ]] || die "Graph requires equal A/F ranks"
 fi
 if [[ "${ENABLE_MTP}" == "1" ]]; then
