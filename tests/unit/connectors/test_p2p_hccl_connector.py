@@ -400,7 +400,8 @@ def test_p2p_hccl_attention_stream_pipeline_orders_sync_send_recv(monkeypatch):
     active_stream = [None]
     compute_stream = object()
     send_stream = object()
-    recv_stream = object()
+    recv_streams = [object(), object()]
+    recv_stream = recv_streams[0]
 
     class FakeEvent:
         def __init__(self, name):
@@ -422,7 +423,7 @@ def test_p2p_hccl_attention_stream_pipeline_orders_sync_send_recv(monkeypatch):
             active_stream[0] = previous
 
     connector.a2f_send_stream = send_stream
-    connector.f2a_recv_stream = recv_stream
+    connector.f2a_recv_streams = recv_streams
     connector.attention_pipeline_events = {
         (1, 0): hccl_module.HCCLAttentionPipelineEvents(
             compute_done=FakeEvent("compute"),
@@ -485,7 +486,7 @@ def test_p2p_hccl_layer_major_defers_receive_wait(monkeypatch):
     active_stream = [None]
     compute_stream = object()
     send_stream = object()
-    recv_stream = object()
+    recv_streams = [object(), object()]
 
     class FakeEvent:
         def __init__(self, name):
@@ -507,9 +508,9 @@ def test_p2p_hccl_layer_major_defers_receive_wait(monkeypatch):
             active_stream[0] = previous
 
     connector.a2f_send_stream = send_stream
-    connector.f2a_recv_stream = recv_stream
+    connector.f2a_recv_streams = recv_streams
     connector.attention_pipeline_events = {
-        (1, 0): hccl_module.HCCLAttentionPipelineEvents(
+        (1, 1): hccl_module.HCCLAttentionPipelineEvents(
             compute_done=FakeEvent("compute"),
             send_done=FakeEvent("send"),
             recv_done=FakeEvent("recv"),
@@ -549,17 +550,19 @@ def test_p2p_hccl_layer_major_defers_receive_wait(monkeypatch):
 
     connector.send_attn_output(
         hidden,
-        _attention_context(layer_idx=1, stage_idx=0, num_tokens=2),
+        _attention_context(layer_idx=1, stage_idx=1, num_tokens=2),
     )
-    output = connector.recv_ffn_output(hidden, ubatch_idx=0)
+    output = connector.recv_ffn_output(hidden, ubatch_idx=1)
 
     assert output is not hidden
-    assert tuple(connector.attention_receive_dependencies) == (0,)
+    assert tuple(connector.attention_receive_dependencies) == (1,)
     with pytest.raises(RuntimeError, match="pipeline is not idle"):
         connector.require_attention_pipeline_idle()
     assert calls[-1][0] == "recv"
+    assert calls[-1][1] == "record"
+    assert calls[-1][2] is recv_streams[1]
 
-    connector.wait_for_attention_stage_receive(stage_idx=0, tensor=output)
+    connector.wait_for_attention_stage_receive(stage_idx=1, tensor=output)
 
     assert connector.attention_receive_dependencies == {}
     connector.require_attention_pipeline_idle()
@@ -572,7 +575,7 @@ def test_p2p_hccl_attention_stream_pipeline_requires_pretransferred_ids(
 ):
     connector = _connector(role="attention", num_ubatches=2)
     connector.a2f_send_stream = object()
-    connector.f2a_recv_stream = object()
+    connector.f2a_recv_streams = [object(), object()]
     connector.attention_pipeline_events = {
         (0, 0): hccl_module.HCCLAttentionPipelineEvents(
             compute_done=object(),
@@ -603,7 +606,7 @@ def test_p2p_hccl_attention_stream_pipeline_is_inactive_without_forward_context(
 ):
     connector = _connector(role="attention", num_ubatches=2)
     connector.a2f_send_stream = object()
-    connector.f2a_recv_stream = object()
+    connector.f2a_recv_streams = [object(), object()]
     connector.attention_pipeline_events = {(1, 0): object()}
     monkeypatch.setattr(
         hccl_module,

@@ -90,7 +90,7 @@ class AFDNPUFFNModelRunner(NPUModelRunner):
             isinstance(self.connector, P2pHcclAFDConnector)
             and self.connector.stream_overlap_enabled
         )
-        self.ffn_recv_stream = None
+        self.ffn_recv_streams = []
         self.ffn_compute_stream = None
         self.ffn_send_stream = None
         self.ffn_recv_events: dict[tuple[int, int], Any] = {}
@@ -110,10 +110,15 @@ class AFDNPUFFNModelRunner(NPUModelRunner):
 
     def _initialize_ffn_stream_pipeline(self, device: torch.device) -> None:
         """Create eager U2 receive, compute, and send streams for FFN."""
-        self.ffn_recv_stream = torch.npu.Stream(device=device)
+        num_stages = int(self.vllm_config.parallel_config.num_ubatches)
+        # Receive each HCCL stage on an independent submission stream so one
+        # late Attention peer cannot head-of-line block another stage.
+        self.ffn_recv_streams = [
+            torch.npu.Stream(device=device) for _ in range(num_stages)
+        ]
         self.ffn_compute_stream = torch.npu.Stream(device=device)
         self.ffn_send_stream = torch.npu.Stream(device=device)
-        stage_ids = range(int(self.vllm_config.parallel_config.num_ubatches))
+        stage_ids = range(num_stages)
         event_keys = [
             (layer_idx, stage_idx)
             for layer_idx in range(self.num_layers)
@@ -436,7 +441,7 @@ class AFDNPUFFNModelRunner(NPUModelRunner):
         )
         if stream_overlap:
             assert isinstance(self.connector, P2pHcclAFDConnector)
-            assert self.ffn_recv_stream is not None
+            assert len(self.ffn_recv_streams) == len(stage_ids)
             assert self.ffn_compute_stream is not None
             assert self.ffn_send_stream is not None
         try:
@@ -460,7 +465,7 @@ class AFDNPUFFNModelRunner(NPUModelRunner):
                             layer_idx=layer_idx,
                             max_num_tokens=self.max_num_tokens,
                             input_ids=stage_input_ids,
-                            recv_stream=self.ffn_recv_stream,
+                            recv_stream=self.ffn_recv_streams[stage_idx],
                             wait_event=previous_send_event,
                             done_event=recv_event,
                         )

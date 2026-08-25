@@ -795,8 +795,9 @@ def test_npu_attention_runner_pretransfers_hccl_stream_ids_by_stage(monkeypatch)
     connector = object.__new__(attention_model_runner.P2pHcclAFDConnector)
     connector.stream_overlap_enabled = True
     connector.afd_config = SimpleNamespace(role="attention")
+    connector.num_stages = 2
     connector.a2f_send_stream = object()
-    connector.f2a_recv_stream = object()
+    connector.f2a_recv_streams = [object(), object()]
     connector.attention_pipeline_events = {(0, 0): object()}
     connector.requires_input_ids = True
     connector.send_input_ids = lambda input_ids, *, ubatch_idx: events.append(
@@ -1746,7 +1747,7 @@ def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(monkeypatch)
     _patch_ffn_forward_context(monkeypatch)
     calls = []
     active_stream = [None]
-    recv_stream = object()
+    recv_streams = [object(), object()]
     compute_stream = object()
     send_stream = object()
     default_stream = object()
@@ -1840,7 +1841,7 @@ def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(monkeypatch)
     runner.num_layers = 2
     runner.max_num_tokens = 2
     runner.ffn_stream_overlap_enabled = True
-    runner.ffn_recv_stream = recv_stream
+    runner.ffn_recv_streams = recv_streams
     runner.ffn_compute_stream = compute_stream
     runner.ffn_send_stream = send_stream
     event_keys = [
@@ -1878,6 +1879,7 @@ def test_npu_ffn_runner_stream_pipeline_orders_each_layer_and_stage(monkeypatch)
 
     for layer_idx in range(2):
         for stage_idx in range(2):
+            recv_stream = recv_streams[stage_idx]
             recv_marker = ("recv", layer_idx, stage_idx, recv_stream)
             compute_marker = ("compute", layer_idx, stage_idx, compute_stream)
             send_marker = ("send", layer_idx, stage_idx, send_stream)

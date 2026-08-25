@@ -237,7 +237,7 @@ class P2pHcclAFDConnector(AFDConnectorBase):
         self.is_graph_capturing = False
         self.is_warmup = False
         self.a2f_send_stream = None
-        self.f2a_recv_stream = None
+        self.f2a_recv_streams = []
         self.attention_pipeline_events: dict[
             tuple[int, int], HCCLAttentionPipelineEvents
         ] = {}
@@ -338,7 +338,7 @@ class P2pHcclAFDConnector(AFDConnectorBase):
         self.dp_metadata_list = {}
         self.stage_layouts = {}
         self.a2f_send_stream = None
-        self.f2a_recv_stream = None
+        self.f2a_recv_streams = []
         self.attention_pipeline_events = {}
         self.pending_attention_transfers = {}
         self.attention_receive_dependencies = {}
@@ -350,7 +350,7 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             self.stream_overlap_enabled
             and self.afd_config.role == "attention"
             and self.a2f_send_stream is not None
-            and self.f2a_recv_stream is not None
+            and len(self.f2a_recv_streams) == self.num_stages
             and self.attention_pipeline_events
         )
 
@@ -380,7 +380,11 @@ class P2pHcclAFDConnector(AFDConnectorBase):
         """Create the eager U2 Attention communication streams and events."""
         device = torch.device("npu", self.local_rank)
         self.a2f_send_stream = torch.npu.Stream(device=device)
-        self.f2a_recv_stream = torch.npu.Stream(device=device)
+        # Keep one receive submission stream per HCCL stage. A slow receive on
+        # one process group must not impose stream order on another stage.
+        self.f2a_recv_streams = [
+            torch.npu.Stream(device=device) for _ in range(self.num_stages)
+        ]
         num_layers = int(self.vllm_config.model_config.hf_config.num_hidden_layers)
         self.attention_pipeline_events = {
             (layer_idx, stage_idx): HCCLAttentionPipelineEvents(
@@ -540,16 +544,16 @@ class P2pHcclAFDConnector(AFDConnectorBase):
                 f"stage={stage_idx}"
             )
         recv_tensor = torch.empty_like(ref_tensor)
-        assert self.f2a_recv_stream is not None
-        with torch.npu.stream(self.f2a_recv_stream):
-            pending.events.send_done.wait(self.f2a_recv_stream)
+        recv_stream = self.f2a_recv_streams[stage_idx]
+        with torch.npu.stream(recv_stream):
+            pending.events.send_done.wait(recv_stream)
             self._recv_tensor(
                 recv_tensor,
                 src=src,
                 group=group,
-                stream=self.f2a_recv_stream,
+                stream=recv_stream,
             )
-            pending.events.recv_done.record(self.f2a_recv_stream)
+            pending.events.recv_done.record(recv_stream)
 
         if self._layer_major_attention_pipeline_active():
             if stage_idx in self.attention_receive_dependencies:
