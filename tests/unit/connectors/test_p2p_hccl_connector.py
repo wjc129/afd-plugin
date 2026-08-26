@@ -31,9 +31,15 @@ def _vllm_config(
     dsv4: bool = True,
     max_num_batched_tokens: int = 16,
     mtp: bool = False,
+    full_graph: bool = False,
 ):
     return SimpleNamespace(
         additional_config={"afd": {"connector_extra_config": {}}},
+        compilation_config=SimpleNamespace(
+            cudagraph_mode=SimpleNamespace(
+                has_full_cudagraphs=lambda: full_graph,
+            ),
+        ),
         parallel_config=SimpleNamespace(
             data_parallel_size=1,
             data_parallel_rank=0,
@@ -369,6 +375,82 @@ def test_p2p_hccl_stage_groups_are_independent(monkeypatch):
     assert sent_groups == [
         (0, connector.data_pg_list[0]),
         (0, connector.data_pg_list[1]),
+    ]
+
+
+def test_p2p_hccl_attention_preinitializes_each_graph_stage(monkeypatch):
+    connector = _connector(
+        role="attention",
+        role_rank=3,
+        attention=4,
+        ffn=2,
+        num_ubatches=2,
+    )
+    events = []
+    handshake = torch.empty(1, dtype=torch.int32)
+    monkeypatch.setattr(
+        hccl_module.torch,
+        "empty",
+        lambda *_args, **_kwargs: handshake,
+    )
+    monkeypatch.setattr(
+        hccl_module.dist,
+        "send",
+        lambda _tensor, *, dst, group: events.append(("send", dst, group)),
+    )
+    monkeypatch.setattr(
+        hccl_module.dist,
+        "recv",
+        lambda _tensor, *, src, group: events.append(("recv", src, group)),
+    )
+
+    connector._preinitialize_data_process_groups()
+
+    assert events == [
+        ("send", 1, connector.data_pg_list[0]),
+        ("recv", 1, connector.data_pg_list[0]),
+        ("send", 1, connector.data_pg_list[1]),
+        ("recv", 1, connector.data_pg_list[1]),
+    ]
+
+
+def test_p2p_hccl_ffn_preinitializes_all_graph_peers(monkeypatch):
+    connector = _connector(
+        role="ffn",
+        role_rank=1,
+        attention=4,
+        ffn=2,
+        num_ubatches=2,
+    )
+    events = []
+    handshake = torch.empty(1, dtype=torch.int32)
+    monkeypatch.setattr(
+        hccl_module.torch,
+        "empty",
+        lambda *_args, **_kwargs: handshake,
+    )
+    monkeypatch.setattr(
+        hccl_module.dist,
+        "send",
+        lambda _tensor, *, dst, group: events.append(("send", dst, group)),
+    )
+    monkeypatch.setattr(
+        hccl_module.dist,
+        "recv",
+        lambda _tensor, *, src, group: events.append(("recv", src, group)),
+    )
+
+    connector._preinitialize_data_process_groups()
+
+    assert events == [
+        ("recv", 4, connector.data_pg_list[0]),
+        ("send", 4, connector.data_pg_list[0]),
+        ("recv", 5, connector.data_pg_list[0]),
+        ("send", 5, connector.data_pg_list[0]),
+        ("recv", 4, connector.data_pg_list[1]),
+        ("send", 4, connector.data_pg_list[1]),
+        ("recv", 5, connector.data_pg_list[1]),
+        ("send", 5, connector.data_pg_list[1]),
     ]
 
 

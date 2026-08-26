@@ -26,6 +26,11 @@ bash recipe/npu/P2pHcclAFDConnector/deepseek_v4/pd_decode_attention_graph_u2.sh
 Decode Attention 健康检查通过后，再启动原有 PD proxy 并发送请求。首次覆盖某个
 shape 时会发生图捕获，耗时可能高于后续回放。
 
+图模式入口默认设置 `HCCL_CONNECT_TIMEOUT=1200`。连接器还会在图编译前，按
+Stage 0、Stage 1 顺序为每对 Attention/FFN Rank 执行一次单元素 HCCL 往返，
+提前完成 P2P 子通信器的懒初始化，避免 FFN 已进入首次 `recv`、Attention 仍在
+编译时触发默认 120 秒建链超时。这只增加启动阶段开销，不进入在线请求路径。
+
 验证时至少检查以下证据：
 
 - 启动参数不包含 `--enforce-eager`，并包含

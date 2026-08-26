@@ -161,6 +161,7 @@ class HCCLAttentionReceiveDependency:
 
 _MTP_HEADER_MAGIC = 0x4D545031
 _MTP_HEADER_PREFIX_SIZE = 4
+_HCCL_COMMUNICATOR_HANDSHAKE_SIZE = 1
 
 
 class P2pHcclAFDConnector(AFDConnectorBase):
@@ -224,6 +225,9 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             int(vllm_config.parallel_config.num_ubatches),
         )
         self.stream_overlap_enabled = self.num_stages > 1
+        self.preinitialize_data_groups = (
+            vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs()
+        )
 
         self.data_pg_list: list[ProcessGroup] = []
         self.ids_pg_list: list[ProcessGroup] = []
@@ -311,6 +315,8 @@ class P2pHcclAFDConnector(AFDConnectorBase):
                 group_name="afd_hccl_p2p_control",
                 timeout=timeout,
             )
+            if self.preinitialize_data_groups:
+                self._preinitialize_data_process_groups()
             if self.stream_overlap_enabled and self.afd_config.role == "attention":
                 self._initialize_attention_stream_pipeline()
         except BaseException:
@@ -397,6 +403,32 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             for layer_idx in range(num_layers)
             for stage_idx in range(self.num_stages)
         }
+
+    def _preinitialize_data_process_groups(self) -> None:
+        """Initialize graph-mode P2P communicators before graph compilation.
+
+        HCCL creates the pair communicator lazily on the first send/receive.
+        Graph warmup can leave FFN waiting in that initialization while the
+        paired Attention rank is still compiling. A one-element round trip per
+        stage makes both peers enter communicator creation at connector startup.
+        """
+
+        handshake = torch.empty(
+            _HCCL_COMMUNICATOR_HANDSHAKE_SIZE,
+            dtype=torch.int32,
+            device=f"npu:{self.local_rank}",
+        )
+        if self.afd_config.role == "attention":
+            ffn_rank = self.mapping.subgroup_ranks[0]
+            for group in self.data_pg_list:
+                dist.send(handshake, dst=ffn_rank, group=group)
+                dist.recv(handshake, src=ffn_rank, group=group)
+            return
+
+        for group in self.data_pg_list:
+            for attention_rank in self._attention_peer_world_ranks():
+                dist.recv(handshake, src=attention_rank, group=group)
+                dist.send(handshake, dst=attention_rank, group=group)
 
     def send_attn_output(
         self,
