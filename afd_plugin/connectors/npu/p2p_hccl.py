@@ -225,7 +225,7 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             int(vllm_config.parallel_config.num_ubatches),
         )
         self.stream_overlap_enabled = self.num_stages > 1
-        self.preinitialize_data_groups = (
+        self.preinitialize_graph_groups = (
             vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs()
         )
 
@@ -315,8 +315,8 @@ class P2pHcclAFDConnector(AFDConnectorBase):
                 group_name="afd_hccl_p2p_control",
                 timeout=timeout,
             )
-            if self.preinitialize_data_groups:
-                self._preinitialize_data_process_groups()
+            if self.preinitialize_graph_groups:
+                self._preinitialize_graph_process_groups()
             if self.stream_overlap_enabled and self.afd_config.role == "attention":
                 self._initialize_attention_stream_pipeline()
         except BaseException:
@@ -404,13 +404,13 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             for stage_idx in range(self.num_stages)
         }
 
-    def _preinitialize_data_process_groups(self) -> None:
+    def _preinitialize_graph_process_groups(self) -> None:
         """Initialize graph-mode P2P communicators before graph compilation.
 
         HCCL creates the pair communicator lazily on the first send/receive.
-        Graph warmup can leave FFN waiting in that initialization while the
-        paired Attention rank is still compiling. A one-element round trip per
-        stage makes both peers enter communicator creation at connector startup.
+        Graph warmup transfers input IDs before entering the graph and hidden
+        states inside the graph. A one-element round trip for both process-group
+        types makes every peer enter communicator creation at connector startup.
         """
 
         handshake = torch.empty(
@@ -418,14 +418,20 @@ class P2pHcclAFDConnector(AFDConnectorBase):
             dtype=torch.int32,
             device=f"npu:{self.local_rank}",
         )
+        graph_groups: list[ProcessGroup] = []
+        for stage_idx, data_group in enumerate(self.data_pg_list):
+            graph_groups.append(data_group)
+            if self.ids_pg_list:
+                graph_groups.append(self.ids_pg_list[stage_idx])
+
         if self.afd_config.role == "attention":
             ffn_rank = self.mapping.subgroup_ranks[0]
-            for group in self.data_pg_list:
+            for group in graph_groups:
                 dist.send(handshake, dst=ffn_rank, group=group)
                 dist.recv(handshake, src=ffn_rank, group=group)
             return
 
-        for group in self.data_pg_list:
+        for group in graph_groups:
             for attention_rank in self._attention_peer_world_ranks():
                 dist.recv(handshake, src=attention_rank, group=group)
                 dist.send(handshake, dst=attention_rank, group=group)

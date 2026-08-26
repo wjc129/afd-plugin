@@ -378,7 +378,7 @@ def test_p2p_hccl_stage_groups_are_independent(monkeypatch):
     ]
 
 
-def test_p2p_hccl_attention_preinitializes_each_graph_stage(monkeypatch):
+def test_p2p_hccl_attention_preinitializes_graph_data_and_ids(monkeypatch):
     connector = _connector(
         role="attention",
         role_rank=3,
@@ -404,17 +404,21 @@ def test_p2p_hccl_attention_preinitializes_each_graph_stage(monkeypatch):
         lambda _tensor, *, src, group: events.append(("recv", src, group)),
     )
 
-    connector._preinitialize_data_process_groups()
+    connector._preinitialize_graph_process_groups()
 
     assert events == [
         ("send", 1, connector.data_pg_list[0]),
         ("recv", 1, connector.data_pg_list[0]),
+        ("send", 1, connector.ids_pg_list[0]),
+        ("recv", 1, connector.ids_pg_list[0]),
         ("send", 1, connector.data_pg_list[1]),
         ("recv", 1, connector.data_pg_list[1]),
+        ("send", 1, connector.ids_pg_list[1]),
+        ("recv", 1, connector.ids_pg_list[1]),
     ]
 
 
-def test_p2p_hccl_ffn_preinitializes_all_graph_peers(monkeypatch):
+def test_p2p_hccl_ffn_preinitializes_graph_groups_for_all_peers(monkeypatch):
     connector = _connector(
         role="ffn",
         role_rank=1,
@@ -440,17 +444,25 @@ def test_p2p_hccl_ffn_preinitializes_all_graph_peers(monkeypatch):
         lambda _tensor, *, src, group: events.append(("recv", src, group)),
     )
 
-    connector._preinitialize_data_process_groups()
+    connector._preinitialize_graph_process_groups()
 
     assert events == [
         ("recv", 4, connector.data_pg_list[0]),
         ("send", 4, connector.data_pg_list[0]),
         ("recv", 5, connector.data_pg_list[0]),
         ("send", 5, connector.data_pg_list[0]),
+        ("recv", 4, connector.ids_pg_list[0]),
+        ("send", 4, connector.ids_pg_list[0]),
+        ("recv", 5, connector.ids_pg_list[0]),
+        ("send", 5, connector.ids_pg_list[0]),
         ("recv", 4, connector.data_pg_list[1]),
         ("send", 4, connector.data_pg_list[1]),
         ("recv", 5, connector.data_pg_list[1]),
         ("send", 5, connector.data_pg_list[1]),
+        ("recv", 4, connector.ids_pg_list[1]),
+        ("send", 4, connector.ids_pg_list[1]),
+        ("recv", 5, connector.ids_pg_list[1]),
+        ("send", 5, connector.ids_pg_list[1]),
     ]
 
 
