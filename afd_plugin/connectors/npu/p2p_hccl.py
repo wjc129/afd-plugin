@@ -346,12 +346,14 @@ class P2pHcclAFDConnector(AFDConnectorBase):
 
     @property
     def attention_stream_pipeline_ready(self) -> bool:
-        return bool(
+        # Keep every operand Boolean so TorchDynamo does not need to trace
+        # unsupported ``bool(dict)`` during the graph-mode profile run.
+        return (
             self.stream_overlap_enabled
             and self.afd_config.role == "attention"
             and self.a2f_send_stream is not None
             and len(self.f2a_recv_streams) == self.num_stages
-            and self.attention_pipeline_events
+            and len(self.attention_pipeline_events) > 0
         )
 
     def _attention_stream_pipeline_active(self) -> bool:
